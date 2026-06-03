@@ -20,6 +20,7 @@ _ocrapp.log
 _streamlit.log
 _api.log
 _dev.log
+_驗證_*.xlsx
 
 # OS
 Thumbs.db
