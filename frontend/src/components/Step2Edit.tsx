@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Dispatch } from 'react'
 import type { AppState, Action } from '../state'
 import type { Sheet } from '../types'
@@ -9,38 +9,52 @@ export function Step2Edit({ state, dispatch }: { state: AppState; dispatch: Disp
   const { meta, status } = state
   const [excelBusy, setExcelBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  const timer = useRef<number | null>(null)
 
   const structuring = status?.structure_status ?? 'idle'
 
   // 進入步驟2 自動觸發表格整理 + 輪詢
+  // 可取消、不重疊（遞迴 setTimeout，一次只一個請求）、表格只載入一次。
   useEffect(() => {
     if (!meta) return
     if (structuring === 'done' || structuring === 'error') return
-    async function run() {
+    let cancelled = false
+    let timeoutId: number | undefined
+    async function poll() {
+      if (cancelled) return
+      try {
+        const s = await api.getStatus(meta!.job_id)
+        if (cancelled) return
+        dispatch({ type: 'SET_STATUS', status: s })
+        if (s.structure_status === 'done' && s.tables) {
+          const t: Record<number, Sheet> = {}
+          for (const k of Object.keys(s.tables)) t[Number(k)] = s.tables[k]
+          dispatch({ type: 'SET_TABLES', tables: t })
+          return
+        }
+        if (s.structure_status === 'error') {
+          setErr(s.structure_error ?? '表格整理失敗')
+          return
+        }
+        timeoutId = window.setTimeout(poll, 700)
+      } catch (ex) {
+        if (!cancelled) setErr(String(ex))
+      }
+    }
+    async function start() {
       try {
         if (structuring === 'idle') {
           await api.startStructure(meta!.job_id)
         }
-        timer.current = window.setInterval(async () => {
-          const s = await api.getStatus(meta!.job_id)
-          dispatch({ type: 'SET_STATUS', status: s })
-          if (s.structure_status === 'done' && s.tables) {
-            const t: Record<number, Sheet> = {}
-            for (const k of Object.keys(s.tables)) t[Number(k)] = s.tables[k]
-            dispatch({ type: 'SET_TABLES', tables: t })
-            if (timer.current) window.clearInterval(timer.current)
-          } else if (s.structure_status === 'error') {
-            setErr(s.structure_error ?? '表格整理失敗')
-            if (timer.current) window.clearInterval(timer.current)
-          }
-        }, 700)
+        if (!cancelled) poll()
       } catch (ex) {
-        setErr(String(ex))
+        if (!cancelled) setErr(String(ex))
       }
     }
-    run()
-    return () => { if (timer.current) window.clearInterval(timer.current) }
+    start()
+    return () => {
+      cancelled = true
+      if (timeoutId) window.clearTimeout(timeoutId)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meta?.job_id])
 
