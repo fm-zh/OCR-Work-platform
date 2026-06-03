@@ -1,0 +1,5 @@
+streamlit>=1.30
+pymupdf>=1.23
+opencv-python>=4.8
+numpy>=1.24
+pillow>=10.0
