@@ -18,6 +18,7 @@ _pro.log
 _run.log
 _ocrapp.log
 _streamlit.log
+_api.log
 
 # OS
 Thumbs.db
