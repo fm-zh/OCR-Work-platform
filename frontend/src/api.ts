@@ -1,4 +1,4 @@
-import type { JobMeta, JobStatus } from './types'
+import type { JobMeta, JobStatus, Sheet } from './types'
 
 const BASE = '/api'
 
@@ -30,12 +30,18 @@ export function pageImageUrl(jobId: string, page: number): string {
   return `${BASE}/jobs/${jobId}/pages/${page}/image`
 }
 
-export async function exportExcel(fileName: string, pages: Record<string, string>): Promise<Blob> {
+export async function exportExcel(fileName: string, sheets: Record<string, Sheet>): Promise<Blob> {
   const r = await fetch(`${BASE}/excel`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ file_name: fileName, pages }),
+    body: JSON.stringify({ file_name: fileName, sheets }),
   })
   if (!r.ok) throw new Error(`Excel 匯出失敗 (${r.status})`)
   return r.blob()
+}
+
+export async function startStructure(jobId: string): Promise<{ job_id: string; structure_status: string }> {
+  const r = await fetch(`${BASE}/jobs/${jobId}/structure`, { method: 'POST' })
+  if (!r.ok) throw new Error(`表格整理啟動失敗 (${r.status})`)
+  return r.json()
 }

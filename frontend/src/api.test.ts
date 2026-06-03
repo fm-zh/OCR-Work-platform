@@ -31,12 +31,20 @@ describe('api', () => {
     await expect(api.createJob(f)).rejects.toThrow()
   })
 
-  it('exportExcel posts json and returns blob', async () => {
+  it('exportExcel posts sheets json and returns blob', async () => {
     const blob = new Blob(['x'])
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, blob: async () => blob })
     vi.stubGlobal('fetch', fetchMock)
-    const res = await api.exportExcel('f.pdf', { '1': 'a' })
+    const res = await api.exportExcel('f.pdf', { '1': { columns: ['a'], rows: [['b']] } })
     expect(res).toBe(blob)
     expect(fetchMock).toHaveBeenCalledWith('/api/excel', expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('startStructure posts to structure endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ job_id: 'x', structure_status: 'running' }) })
+    vi.stubGlobal('fetch', fetchMock)
+    const res = await api.startStructure('x')
+    expect(res.structure_status).toBe('running')
+    expect(fetchMock).toHaveBeenCalledWith('/api/jobs/x/structure', expect.objectContaining({ method: 'POST' }))
   })
 })
