@@ -11,6 +11,11 @@ export interface Progress {
   percent: number
 }
 
+export interface Sheet {
+  columns: string[]
+  rows: string[][]
+}
+
 export interface JobStatus {
   job_id: string
   file_name: string
@@ -21,4 +26,7 @@ export interface JobStatus {
   mode: string | null
   pages: Record<string, string> | null
   error: string | null
+  structure_status: 'idle' | 'running' | 'done' | 'error'
+  tables: Record<string, Sheet> | null
+  structure_error: string | null
 }
