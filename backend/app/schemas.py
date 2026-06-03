@@ -1,9 +1,14 @@
 """API 回應模型。"""
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel
+
+
+class Sheet(BaseModel):
+    columns: List[str]
+    rows: List[List[str]]
 
 
 class Progress(BaseModel):
@@ -29,8 +34,11 @@ class JobStatus(BaseModel):
     mode: Optional[str] = None
     pages: Optional[Dict[str, str]] = None
     error: Optional[str] = None
+    structure_status: str = "idle"
+    tables: Optional[Dict[str, Sheet]] = None
+    structure_error: Optional[str] = None
 
 
 class ExcelRequest(BaseModel):
     file_name: str
-    pages: Dict[str, str]
+    sheets: Dict[str, Sheet]

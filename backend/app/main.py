@@ -37,7 +37,9 @@ def _status(job: Job) -> schemas.JobStatus:
     return schemas.JobStatus(job_id=job.job_id, file_name=job.file_name,
                              n_pages=job.n_pages, is_born_digital=job.is_born_digital,
                              status=job.status, progress=job.progress,
-                             mode=job.mode, pages=job.pages, error=job.error)
+                             mode=job.mode, pages=job.pages, error=job.error,
+                             structure_status=job.structure_status,
+                             tables=job.tables, structure_error=job.structure_error)
 
 
 @app.get("/api/health")
@@ -88,16 +90,15 @@ def delete_job(job_id: str) -> None:
 
 @app.post("/api/excel")
 def export_excel(req: schemas.ExcelRequest) -> Response:
-    if not req.pages:
-        raise HTTPException(status_code=400, detail="pages 不可為空")
-    key = engine.resolve_deepseek_key()
+    if not req.sheets:
+        raise HTTPException(status_code=400, detail="sheets 不可為空")
     structured: dict[int, dict] = {}
-    for k, text in req.pages.items():
+    for k, sheet in req.sheets.items():
         try:
             page_no = int(k)
         except ValueError:
             continue
-        structured[page_no] = excel.structure_page(text, key)
+        structured[page_no] = {"columns": sheet.columns, "rows": sheet.rows}
     data = excel.build_workbook(structured)
     stem = Path(req.file_name).stem or "result"
     quoted = urllib.parse.quote(f"{stem}.xlsx")
@@ -106,3 +107,14 @@ def export_excel(req: schemas.ExcelRequest) -> Response:
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quoted}"},
     )
+
+
+@app.post("/api/jobs/{job_id}/structure")
+def structure_job(job_id: str) -> dict:
+    job = store.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="找不到任務")
+    if job.status != "done":
+        raise HTTPException(status_code=409, detail="請先完成辨識")
+    job = store.start_structuring(job_id)
+    return {"job_id": job.job_id, "structure_status": job.structure_status}
