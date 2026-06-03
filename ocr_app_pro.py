@@ -1,4 +1,5 @@
-"""進階版辨識網頁 — PaddleOCR + DeepSeek，三步驟分頁，含原圖對照與線上編輯。
+"""進階版辨識網頁 — PaddleOCR + DeepSeek，兩步驟分頁（會自動跳轉）。
+步驟1：選擇檔案 → 預覽確認 → 進行辨識；步驟2：辨識結果與對照編輯。
 啟動： streamlit run ocr_app_pro.py --server.port 8503
 """
 from __future__ import annotations
@@ -25,6 +26,7 @@ from ocr_app_pro_helpers import (
 load_env_file(Path(__file__).resolve().parent / ".env")
 
 PREVIEW_DPI = 150
+THUMB_BOX = (400, 560)  # 步驟1 檔案縮圖的規定範圍（寬, 高，px），等比縮放後置入此框內
 
 st.set_page_config(page_title="財報文件智慧辨識（進階版）", page_icon="🛠️", layout="wide")
 
@@ -40,22 +42,26 @@ ss.setdefault("preview", None)
 ss.setdefault("cur_page", 1)
 
 st.title("🛠️ 財報文件智慧辨識（進階版）")
-st.caption("PaddleOCR ＋ DeepSeek 校正 · 原圖對照 · 結果可線上編輯"
+st.caption("PaddleOCR ＋ DeepSeek 校正 · 預覽確認 · 原圖對照 · 結果可線上編輯"
            "（內含文字層之 PDF 自動走文字層擷取）")
 
-STEPS = ["①　上傳檔案", "②　進行辨識", "③　對照編輯"]
-_cols = st.columns(3)
-for _i, _c in enumerate(_cols, start=1):
-    _name = STEPS[_i - 1]
-    if ss.step == _i:
-        _c.success(f"**{_name}**　← 進行中")
-    elif ss.step > _i:
-        _c.info(f"{_name}　✅")
-    else:
-        _c.markdown(f"<div style='padding:8px;color:#999'>{_name}</div>",
-                    unsafe_allow_html=True)
+
+# ---------------------------------------------------------------------------
+# 步驟分頁列（可控、完成後自動跳轉）
+# ---------------------------------------------------------------------------
+STEP_LABELS = ["①　選擇檔案 / 預覽 / 辨識", "②　結果與對照編輯"]
+_nav = st.columns(2)
+for _i, _col in enumerate(_nav, start=1):
+    _cur = (ss.step == _i)
+    _reachable = (_i == 1) or (ss.result is not None)
+    if _col.button(STEP_LABELS[_i - 1], key=f"nav{_i}",
+                   type=("primary" if _cur else "secondary"),
+                   use_container_width=True,
+                   disabled=(not _reachable and not _cur)):
+        if _reachable and not _cur:
+            ss.step = _i
+            st.rerun()
 st.divider()
-tab_upload, tab_run, tab_out = st.tabs(STEPS)
 
 
 def zoomable_image(pil_img, key: str, height: int = 560) -> None:
@@ -97,11 +103,21 @@ def zoomable_image(pil_img, key: str, height: int = 560) -> None:
     components.html(html, height=height + 6, scrolling=False)
 
 
-with tab_upload:
-    st.subheader("步驟 1　上傳要辨識的檔案")
-    st.write("支援 **PDF** 與圖片（**JPG / PNG / WEBP**）。")
-    up = st.file_uploader("拖曳或點選上傳", type=["pdf", "jpg", "jpeg", "png", "webp"],
-                          key="uploader")
+def _ensure_preview() -> None:
+    """渲染原圖預覽（快取於 session）。"""
+    if ss.preview is None and ss.file_path:
+        with st.spinner("載入原圖預覽…"):
+            imgs = ocr_lib.render_hidpi(Path(ss.file_path), PREVIEW_DPI)
+            ss.preview = {i + 1: im for i, im in enumerate(imgs)}
+
+
+# ===========================================================================
+# 步驟 1：選擇檔案 → 預覽確認 → 進行辨識
+# ===========================================================================
+if ss.step == 1:
+    st.subheader("步驟 1　選擇檔案 → 預覽確認 → 進行辨識")
+    up = st.file_uploader("拖曳或點選上傳（PDF / JPG / PNG / WEBP）",
+                          type=["pdf", "jpg", "jpeg", "png", "webp"], key="uploader")
     if up is not None:
         updir = Path(tempfile.gettempdir()) / "ocr_pro_uploads"
         updir.mkdir(exist_ok=True)
@@ -117,25 +133,29 @@ with tab_upload:
         info = detect_file(str(dest))
         ss.is_born_digital = info["is_born_digital"]
         ss.n_pages = info["n_pages"]
-        ss.step = max(ss.step, 2)
-        st.success(f"✅ 已上傳：**{up.name}**（{ss.n_pages} 頁）")
-        if ss.is_born_digital:
-            st.info(f"🔎 內含文字層（born-digital）→ 將直接擷取文字層"
-                    f"（字元數 {info['text_chars']}）。")
-        else:
-            st.info("🔎 掃描影像／截圖 → 將以 PaddleOCR ＋ DeepSeek 辨識。")
-        st.markdown("➡️ 請點選上方 **②　進行辨識** 分頁繼續。")
-    elif ss.file_name:
-        st.info(f"目前已上傳：**{ss.file_name}**（重新上傳可更換）")
-with tab_run:
-    st.subheader("步驟 2　進行辨識（PaddleOCR ＋ DeepSeek）")
+
     if not ss.file_path:
-        st.warning("請先在『①　上傳檔案』分頁上傳檔案。")
+        st.info("請先上傳要辨識的檔案。")
     else:
-        st.write(f"待辨識檔案：**{ss.file_name}**（{ss.n_pages} 頁）")
         if ss.is_born_digital:
-            st.success("此檔含文字層，將直接擷取（不需 OCR / LLM，最快最準）。")
-        if st.button("🚀 開始辨識", type="primary", key="run_recognize"):
+            st.info("🔎 此檔內含文字層（born-digital）→ 將直接擷取文字層（數字 100% 精準）。")
+        else:
+            st.info("🔎 此檔為掃描影像／截圖 → 將以 PaddleOCR ＋ DeepSeek 辨識。")
+
+        _ensure_preview()
+        if ss.n_pages and ss.n_pages > 1:
+            pnos = list(range(1, ss.n_pages + 1))
+            idx = pnos.index(ss.cur_page) if ss.cur_page in pnos else 0
+            ss.cur_page = st.selectbox("預覽頁碼", pnos, index=idx, key="prev_page")
+        st.caption(f"檔案縮圖預覽（第 {ss.cur_page} / {ss.n_pages} 頁）")
+        img = (ss.preview or {}).get(ss.cur_page)
+        if img is not None:
+            thumb = img.convert("RGB").copy()
+            thumb.thumbnail(THUMB_BOX)  # 等比縮放至 THUMB_BOX 範圍內
+            st.image(thumb)
+
+        st.markdown("確認上方為要辨識的檔案後，按下方按鈕開始辨識（完成後會自動跳到步驟 2）。")
+        if st.button("✅ 確認無誤，開始辨識", type="primary", key="run_recognize"):
             bar = st.progress(0, text="準備中…")
             seen = {"n": 0}
 
@@ -147,26 +167,28 @@ with tab_run:
             try:
                 res = ocr_recognize.recognize(
                     ss.file_path, corrector="deepseek",
-                    deepseek_key=resolve_deepseek_key(),
-                    progress=_cb)
+                    deepseek_key=resolve_deepseek_key(), progress=_cb)
                 res["elapsed"] = time.time() - t0
                 bar.progress(100, text="完成")
                 ss.result = res
                 ss.edited = {}
-                ss.preview = None
                 ss.cur_page = 1
-                ss.step = 3
-                st.success(f"✅ 辨識完成（{res['mode']}，{res['elapsed']:.1f} 秒）。"
-                           "請點選上方 **③　對照編輯** 分頁查看。")
+                ss.step = 2
+                st.rerun()
             except Exception as exc:
                 bar.empty()
                 st.error(f"❌ 辨識失敗：{type(exc).__name__}: {exc}")
                 st.caption("若為 DeepSeek 金鑰／網路問題，請確認專案 .env 內的 "
                            "DEEPSEEK_API_KEY 有效後重試。")
-with tab_out:
-    st.subheader("步驟 3　對照編輯")
+
+
+# ===========================================================================
+# 步驟 2：辨識結果與對照編輯
+# ===========================================================================
+else:
+    st.subheader("步驟 2　辨識結果與對照編輯")
     if not ss.result:
-        st.warning("請先完成『②　進行辨識』。")
+        st.warning("尚未有辨識結果，請回『①　選擇檔案 / 預覽 / 辨識』。")
     else:
         pages = ss.result["pages"]
         pnos = sorted(pages)
@@ -178,11 +200,7 @@ with tab_out:
         else:
             ss.cur_page = pnos[0]
 
-        if ss.preview is None and ss.file_path:
-            with st.spinner("載入原圖…"):
-                imgs = ocr_lib.render_hidpi(Path(ss.file_path), PREVIEW_DPI)
-                ss.preview = {i + 1: im for i, im in enumerate(imgs)}
-
+        _ensure_preview()
         col_left, col_right = st.columns(2)
         with col_left:
             st.caption(f"原圖（第 {ss.cur_page} 頁）· 滾輪縮放／拖曳／雙擊還原")

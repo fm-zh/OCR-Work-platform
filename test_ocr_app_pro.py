@@ -49,7 +49,7 @@ def test_detect_file_image_pdf():
     assert info["text_chars"] == 0
 
 
-def test_app_loads_with_three_tabs():
+def test_app_loads_with_two_step_nav():
     import warnings
     warnings.filterwarnings("ignore")
     from streamlit.testing.v1 import AppTest
@@ -58,6 +58,8 @@ def test_app_loads_with_three_tabs():
     assert not at.exception
     titles = [t.value for t in at.title]
     assert any("進階版" in t for t in titles)
+    keys = {b.key for b in at.button}
+    assert "nav1" in keys and "nav2" in keys
 
 
 def test_recognize_born_digital_via_app():
@@ -81,9 +83,11 @@ def test_recognize_born_digital_via_app():
     assert res is not None
     assert res["mode"] == "文字層擷取"
     assert 1 in res["pages"]
+    # 完成辨識後應自動跳轉到步驟 2
+    assert at.session_state["step"] == 2
 
 
-def test_step3_shows_editable_text_and_download():
+def test_step2_shows_editable_text_and_download():
     import warnings
     warnings.filterwarnings("ignore")
     from pathlib import Path
@@ -97,7 +101,7 @@ def test_step3_shows_editable_text_and_download():
     at.session_state["result"] = {"mode": "文字層擷取",
                                   "pages": {1: "原始文字"}, "corrector": "x",
                                   "elapsed": 0.0}
-    at.session_state["step"] = 3
+    at.session_state["step"] = 2
     at.run(timeout=120)
     assert not at.exception
     edit = [t for t in at.text_area if t.key == "edit_1"]
