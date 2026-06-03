@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import os
+import urllib.parse
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from . import engine, schemas
+from . import engine, excel, schemas
 from .jobs import Job, JobStore
 
 # 啟動時讀取平台根目錄的 .env（DeepSeek 金鑰；真實環境變數優先）
@@ -83,3 +84,25 @@ def delete_job(job_id: str) -> None:
     if not store.delete(job_id):
         raise HTTPException(status_code=404, detail="找不到任務")
     return None
+
+
+@app.post("/api/excel")
+def export_excel(req: schemas.ExcelRequest) -> Response:
+    if not req.pages:
+        raise HTTPException(status_code=400, detail="pages 不可為空")
+    key = engine.resolve_deepseek_key()
+    structured: dict[int, dict] = {}
+    for k, text in req.pages.items():
+        try:
+            page_no = int(k)
+        except ValueError:
+            continue
+        structured[page_no] = excel.structure_page(text, key)
+    data = excel.build_workbook(structured)
+    stem = Path(req.file_name).stem or "result"
+    quoted = urllib.parse.quote(f"{stem}.xlsx")
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quoted}"},
+    )

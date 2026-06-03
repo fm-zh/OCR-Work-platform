@@ -29,3 +29,8 @@ class JobStatus(BaseModel):
     mode: Optional[str] = None
     pages: Optional[Dict[str, str]] = None
     error: Optional[str] = None
+
+
+class ExcelRequest(BaseModel):
+    file_name: str
+    pages: Dict[str, str]

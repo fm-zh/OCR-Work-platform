@@ -35,3 +35,31 @@ def test_build_workbook_multi_page_no_columns():
     data = {1: {"columns": [], "rows": [["a"]]}, 2: {"columns": [], "rows": [["b"]]}}
     wb = openpyxl.load_workbook(io.BytesIO(excel.build_workbook(data)))
     assert wb.sheetnames == ["第1頁", "第2頁"]
+
+
+import io as _io
+import openpyxl as _openpyxl
+from fastapi.testclient import TestClient
+from app.main import app
+from app import excel as _excel
+
+_client = TestClient(app)
+
+
+def test_excel_endpoint_builds_xlsx(monkeypatch):
+    monkeypatch.setattr(
+        _excel, "structure_page",
+        lambda text, key, **kw: {"columns": ["項目"], "rows": [[text[:3]]]},
+    )
+    r = _client.post("/api/excel", json={"file_name": "財報.pdf",
+                                         "pages": {"1": "abc", "2": "def"}})
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    wb = _openpyxl.load_workbook(_io.BytesIO(r.content))
+    assert wb.sheetnames == ["第1頁", "第2頁"]
+
+
+def test_excel_endpoint_empty_pages_400():
+    r = _client.post("/api/excel", json={"file_name": "x.pdf", "pages": {}})
+    assert r.status_code == 400
