@@ -57,7 +57,7 @@ def test_app_loads_with_two_step_nav():
     at.run(timeout=60)
     assert not at.exception
     titles = [t.value for t in at.title]
-    assert any("進階版" in t for t in titles)
+    assert any("OCR-Work-platform" in t for t in titles)
     keys = {b.key for b in at.button}
     assert "nav1" in keys and "nav2" in keys
 

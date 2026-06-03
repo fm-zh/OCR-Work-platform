@@ -28,7 +28,7 @@ load_env_file(Path(__file__).resolve().parent / ".env")
 PREVIEW_DPI = 150
 THUMB_BOX = (400, 560)  # 步驟1 檔案縮圖的規定範圍（寬, 高，px），等比縮放後置入此框內
 
-st.set_page_config(page_title="財報文件智慧辨識（進階版）", page_icon="🛠️", layout="wide")
+st.set_page_config(page_title="OCR-Work-platform", page_icon="🛠️", layout="wide")
 
 ss = st.session_state
 ss.setdefault("step", 1)
@@ -41,7 +41,7 @@ ss.setdefault("edited", {})
 ss.setdefault("preview", None)
 ss.setdefault("cur_page", 1)
 
-st.title("🛠️ 財報文件智慧辨識（進階版）")
+st.title("🛠️ OCR-Work-platform")
 st.caption("PaddleOCR ＋ DeepSeek 校正 · 預覽確認 · 原圖對照 · 結果可線上編輯"
            "（內含文字層之 PDF 自動走文字層擷取）")
 
