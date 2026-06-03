@@ -8,3 +8,4 @@ numpy
 pillow
 httpx
 pytest
+openpyxl
