@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from . import engine
+from . import engine, excel
 
 
 @dataclass
@@ -26,6 +26,9 @@ class Job:
     mode: Optional[str] = None
     pages: Optional[dict] = None      # {str(page_no): text}
     error: Optional[str] = None
+    structure_status: str = "idle"   # idle | running | done | error
+    tables: Optional[dict] = None     # {"1": {"columns":[...], "rows":[[...]]}}
+    structure_error: Optional[str] = None
 
 
 class JobStore:
@@ -98,3 +101,35 @@ class JobStore:
         except Exception as exc:  # noqa: BLE001
             job.error = f"{type(exc).__name__}: {exc}"
             job.status = "error"
+
+    def start_structuring(self, job_id: str) -> Optional[Job]:
+        job = self.get(job_id)
+        if job is None:
+            return None
+        if job.status != "done":
+            return job  # 尚未辨識完，不啟動（呼叫端回 409）
+        if job.structure_status in ("running", "done"):
+            return job
+        job.structure_status = "running"
+        self._pool.submit(self._run_structuring, job_id)
+        return job
+
+    def _run_structuring(self, job_id: str) -> None:
+        job = self.get(job_id)
+        if job is None:
+            return
+        try:
+            key = engine.resolve_deepseek_key()
+            items = sorted((job.pages or {}).items(),
+                           key=lambda kv: int(kv[0]) if kv[0].isdigit() else 0)
+            tables: dict = {}
+            if items:
+                with ThreadPoolExecutor(max_workers=min(4, len(items))) as ex:
+                    for k, st in ex.map(
+                        lambda kv: (kv[0], excel.structure_page(kv[1], key)), items):
+                        tables[k] = st
+            job.tables = tables
+            job.structure_status = "done"
+        except Exception as exc:  # noqa: BLE001
+            job.structure_error = f"{type(exc).__name__}: {exc}"
+            job.structure_status = "error"

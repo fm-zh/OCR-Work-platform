@@ -49,3 +49,40 @@ def test_recognition_runs_in_background_to_done():
     assert cur.mode == "文字層擷取"
     assert cur.pages["1"].strip()
     assert store.start_recognition("nope") is None
+
+
+def test_start_structuring_runs_to_done(monkeypatch):
+    from app import excel
+    monkeypatch.setattr(excel, "structure_page",
+                        lambda text, key, **kw: {"columns": ["c"], "rows": [[text[:2]]]})
+    store = JobStore()
+    job = store.create("file3.pdf", _data())
+    store.start_recognition(job.job_id)
+    for _ in range(60):
+        if store.get(job.job_id).status in ("done", "error"):
+            break
+        time.sleep(0.2)
+    assert store.get(job.job_id).status == "done"
+    s = store.start_structuring(job.job_id)
+    assert s.structure_status in ("running", "done")
+    for _ in range(60):
+        if store.get(job.job_id).structure_status in ("done", "error"):
+            break
+        time.sleep(0.2)
+    cur = store.get(job.job_id)
+    assert cur.structure_status == "done"
+    assert "1" in cur.tables
+    assert cur.tables["1"]["columns"] == ["c"]
+
+
+def test_start_structuring_before_recognize_stays_idle():
+    store = JobStore()
+    job = store.create("file3.pdf", _data())
+    s = store.start_structuring(job.job_id)
+    assert s is not None
+    assert s.structure_status == "idle"
+
+
+def test_start_structuring_unknown_returns_none():
+    store = JobStore()
+    assert store.start_structuring("nope") is None
