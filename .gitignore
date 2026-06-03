@@ -1,0 +1,25 @@
+# 機密：環境變數（含 API 金鑰）— 切勿提交
+.env
+.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# 執行期暫存／日誌
+_pro.log
+_run.log
+_ocrapp.log
+_streamlit.log
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store

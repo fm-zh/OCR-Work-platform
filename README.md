@@ -30,6 +30,20 @@ streamlit run ocr_app.py --server.port 8502
 ```
 或直接執行 `run.bat`，瀏覽器開啟 http://localhost:8502 。
 
+## 進階版（ocr_app_pro.py）
+
+比簡單版多「原圖對照」與「結果線上編輯」；辨識固定走 PaddleOCR ＋ DeepSeek
+（born-digital 自動文字層）。三步驟分頁：① 上傳 → ② 辨識 → ③ 對照編輯（左原圖、右可編輯）。
+
+**DeepSeek 金鑰以 `.env` 管理**（介面不再有輸入欄位）：在專案根目錄的 `.env` 設定
+```
+DEEPSEEK_API_KEY=你的金鑰
+```
+系統啟動時自動讀取（`load_env_file`）；若作業系統已設同名環境變數，則以環境變數為準。
+
+啟動：`streamlit run ocr_app_pro.py --server.port 8503`，或執行 `run_pro.bat`，
+瀏覽器開 http://localhost:8503 。
+
 ## 檔案結構
 
 | 檔案 | 說明 |
