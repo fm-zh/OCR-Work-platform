@@ -80,11 +80,14 @@ export function Step2Edit({ state, dispatch }: { state: AppState; dispatch: Disp
         if (t) sheets[String(p)] = t
       }
       const blob = await api.exportExcel(meta?.file_name ?? 'result', sheets)
+      const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
-      a.href = URL.createObjectURL(blob)
+      a.href = url
       a.download = (meta?.file_name?.replace(/\.[^.]+$/, '') || 'result') + '.xlsx'
+      document.body.appendChild(a)
       a.click()
-      URL.revokeObjectURL(a.href)
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 2000)
     } catch (ex) {
       setErr(String(ex))
     } finally {
