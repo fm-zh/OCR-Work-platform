@@ -19,6 +19,7 @@ _run.log
 _ocrapp.log
 _streamlit.log
 _api.log
+_dev.log
 
 # OS
 Thumbs.db

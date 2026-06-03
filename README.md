@@ -54,3 +54,10 @@ DEEPSEEK_API_KEY=你的金鑰
 | `ocr_lib.py` | 核心：PaddleOCR API client、PDF 渲染、文字層擷取、前處理 |
 | `llm_correct.py` | Claude CLI／DeepSeek 校正 |
 | `ocr_postprocess.py` | 財報後處理（標題回補、簽署列、待彌補虧損、金額欄頭等） |
+
+## 前後端分離版（backend + frontend）
+
+- 後端 API（FastAPI）：`cd backend && run_api.bat`（或 `python -m uvicorn app.main:app --port 8000`），Swagger 文件 http://localhost:8000/docs 。
+- 前端 SPA（React+Vite）：先啟動後端，再 `cd frontend && run_frontend.bat`（或 `npm run dev`），開 http://localhost:5173 。dev 下 `/api` 由 Vite proxy 轉到 :8000。
+
+流程：① 選檔→縮圖預覽確認→辨識（非同步、顯示進度、完成自動跳轉）→ ② 原圖對照＋線上編輯→下載同名 .txt。
