@@ -29,3 +29,13 @@ export async function deleteJob(jobId: string): Promise<void> {
 export function pageImageUrl(jobId: string, page: number): string {
   return `${BASE}/jobs/${jobId}/pages/${page}/image`
 }
+
+export async function exportExcel(fileName: string, pages: Record<string, string>): Promise<Blob> {
+  const r = await fetch(`${BASE}/excel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file_name: fileName, pages }),
+  })
+  if (!r.ok) throw new Error(`Excel 匯出失敗 (${r.status})`)
+  return r.blob()
+}

@@ -30,4 +30,13 @@ describe('api', () => {
     const f = new File([new Uint8Array([1])], 'f.pdf')
     await expect(api.createJob(f)).rejects.toThrow()
   })
+
+  it('exportExcel posts json and returns blob', async () => {
+    const blob = new Blob(['x'])
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, blob: async () => blob })
+    vi.stubGlobal('fetch', fetchMock)
+    const res = await api.exportExcel('f.pdf', { '1': 'a' })
+    expect(res).toBe(blob)
+    expect(fetchMock).toHaveBeenCalledWith('/api/excel', expect.objectContaining({ method: 'POST' }))
+  })
 })
