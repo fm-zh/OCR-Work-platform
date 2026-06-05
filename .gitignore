@@ -14,6 +14,7 @@ venv/
 .streamlit/secrets.toml
 
 # 執行期暫存／日誌
+logs/
 _pro.log
 _run.log
 _ocrapp.log
