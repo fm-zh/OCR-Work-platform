@@ -35,14 +35,25 @@ class JobStore:
     def __init__(self) -> None:
         self._jobs: dict[str, Job] = {}
         self._lock = threading.Lock()
-        self._pool = ThreadPoolExecutor(max_workers=4)
+        # 序列化辨識：這台機器記憶體吃緊，單次辨識峰值約 1.2GB，
+        # 並發會疊加導致 OOM，故一次只跑一個。
+        self._pool = ThreadPoolExecutor(max_workers=1)
 
-    def create(self, file_name: str, data: bytes) -> Job:
+    def create(self, file_name: str, data: bytes,
+               max_pages_scanned: Optional[int] = None,
+               max_pages_born: Optional[int] = None) -> Job:
         job_id = uuid.uuid4().hex
         work = Path(tempfile.mkdtemp(prefix=f"ocrjob_{job_id}_"))
         fpath = work / file_name
         fpath.write_bytes(data)
         det = engine.detect(fpath)
+        # 在「渲染影像」之前就擋掉頁數過多的檔，避免吃爆記憶體。
+        limit = max_pages_born if det["is_born_digital"] else max_pages_scanned
+        if limit is not None and det["n_pages"] > limit:
+            shutil.rmtree(work, ignore_errors=True)
+            kind = "文字層" if det["is_born_digital"] else "掃描"
+            raise ValueError(
+                f"頁數過多：{det['n_pages']} 頁（{kind}檔上限 {limit} 頁），請分批上傳")
         preview_dir = work / "preview"
         engine.render_previews(fpath, preview_dir)
         job = Job(job_id=job_id, file_name=file_name, file_path=str(fpath),

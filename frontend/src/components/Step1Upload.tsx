@@ -63,10 +63,13 @@ export function Step1Upload({ state, dispatch }: { state: AppState; dispatch: Di
       <h2>步驟 1　選擇檔案 → 預覽確認 → 進行辨識</h2>
       <input
         type="file"
-        accept=".pdf,.jpg,.jpeg,.png,.webp"
+        accept=".pdf,.jpg,.jpeg,.png"
         onChange={onFile}
         disabled={busy || recognizing}
       />
+      <p className="hint">
+        支援格式：PDF、JPG、PNG　·　單檔上限 {api.MAX_UPLOAD_MB}MB
+      </p>
       {err && <p className="error">❌ {err}</p>}
       {meta && (
         <>

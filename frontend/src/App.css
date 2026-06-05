@@ -85,6 +85,12 @@
   color: var(--danger);
 }
 
+.hint {
+  color: var(--muted, #6b7280);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
 .progress {
   color: var(--accent);
   font-weight: 500;

@@ -2,11 +2,20 @@ import type { JobMeta, JobStatus, Sheet } from './types'
 
 const BASE = '/api'
 
+export const MAX_UPLOAD_MB = 20
+
 export async function createJob(file: File): Promise<JobMeta> {
+  if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+    throw new Error(`檔案 ${(file.size / 1048576).toFixed(1)}MB 超過上限 ${MAX_UPLOAD_MB}MB，請壓縮或分批上傳`)
+  }
   const fd = new FormData()
   fd.append('file', file)
   const r = await fetch(`${BASE}/jobs`, { method: 'POST', body: fd })
-  if (!r.ok) throw new Error(`上傳失敗 (${r.status})`)
+  if (!r.ok) {
+    let detail = ''
+    try { detail = (await r.json()).detail } catch { /* 無 JSON 內容 */ }
+    throw new Error(detail || `上傳失敗 (${r.status})`)
+  }
   return r.json()
 }
 
