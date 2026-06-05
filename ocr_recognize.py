@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -24,12 +25,28 @@ import ocr_postprocess
 
 def red_to_black(im: Image.Image) -> Image.Image:
     """Turn red pixels (stamps / red negative figures) black, then grayscale —
-    recovers text the OCR would otherwise drop or be confused by."""
-    arr = np.array(im.convert("RGB"))
-    R = arr[..., 0].astype(int); G = arr[..., 1].astype(int); B = arr[..., 2].astype(int)
+    recovers text the OCR would otherwise drop or be confused by.
+
+    使用 int16（而非 int64）計算色差，結果與原本完全相同，但記憶體用量約少 4 倍；
+    直接輸出灰階（L），避免多保留一份 RGB 副本。"""
+    rgb = im.convert("RGB")
+    arr = np.asarray(rgb)
+    R = arr[..., 0].astype(np.int16)
+    G = arr[..., 1].astype(np.int16)
+    B = arr[..., 2].astype(np.int16)
     mask = ((R - G) > 20) & ((R - B) > 20) & (R > 80)
-    out = arr.copy(); out[mask] = [0, 0, 0]
-    return Image.fromarray(out).convert("L")
+    gray = np.asarray(rgb.convert("L")).copy()
+    gray[mask] = 0
+    return Image.fromarray(gray, "L")
+
+
+def _ordered_pages(full_text: str, expected: int) -> list[str]:
+    """把單批 OCR 的 full_text 依「--- 第 N 頁 ---」拆成有序的頁面文字清單。
+    用於多批辨識時把各批結果接回全域頁序。"""
+    d = _split_pages(full_text)
+    if d:
+        return [d.get(k, "") for k in sorted(d)]
+    return [full_text.strip()]
 
 
 def _split_pages(corrected: str) -> dict[int, str]:
@@ -66,19 +83,56 @@ def recognize(path, corrector: str = "claude", deepseek_key: str = "",
         return {"mode": "文字層擷取", "pages": pages, "corrector": "（文字層，未經 LLM）"}
 
     # ---- Route 2: image / scanned → PaddleOCR + LLM correction --------------
+    # 逐頁串流：render 一頁 → 去紅字 → 存暫存 JPEG → 釋放，記憶體只跟單頁有關，
+    # 避免高 DPI 多頁文件一次載入全部頁面而 OOM。
     log(f"渲染影像（{dpi} DPI）並去除紅色印章/紅字…")
-    images = [red_to_black(im) for im in ocr_lib.render_hidpi(path, dpi)]
-    fd, tmp = tempfile.mkstemp(prefix="ocrapp_", suffix=".pdf")
-    os.close(fd)
+    workdir = Path(tempfile.mkdtemp(prefix="ocrpages_"))
     try:
-        ocr_lib.pack_to_pdf(images, Path(tmp), resolution=dpi)
-        log("PaddleOCR 辨識中…")
-        full_text = ocr_lib.ocr_file(Path(tmp)).get("full_text") or ""
+        # 逐頁 render→去紅字→存暫存 JPEG（單一壓縮、維持 DPI 與畫質）
+        page_files = []  # (path, size_bytes)
+        for i, im in enumerate(ocr_lib.iter_hidpi(path, dpi), start=1):
+            g = red_to_black(im)
+            im.close()
+            pp = workdir / f"p{i:04d}.jpg"
+            g.convert("L").save(pp, "JPEG", quality=88)
+            g.close()
+            page_files.append((pp, pp.stat().st_size))
+            log(f"前處理第 {i} 頁…")
+
+        # 依 OCR API 單檔上限把頁面切成多批（維持 700 DPI，不犧牲畫質）
+        limit = ocr_lib.MAX_UPLOAD_BYTES - 1024 * 1024
+        batches, cur, cur_sz = [], [], 0
+        for pp, sz in page_files:
+            if cur and cur_sz + sz > limit:
+                batches.append(cur); cur, cur_sz = [], 0
+            cur.append(pp); cur_sz += sz
+        if cur:
+            batches.append(cur)
+
+        def _ocr_batch(paths) -> str:
+            fd, tmp = tempfile.mkstemp(prefix="ocrapp_", suffix=".pdf")
+            os.close(fd)
+            try:
+                ocr_lib.pack_paths_to_pdf(paths, Path(tmp), dpi=dpi)
+                return ocr_lib.ocr_file(Path(tmp)).get("full_text") or ""
+            finally:
+                try:
+                    Path(tmp).unlink()
+                except OSError:
+                    pass
+
+        if len(batches) <= 1:
+            log("PaddleOCR 辨識中…")
+            full_text = _ocr_batch([p for p, _ in page_files])
+        else:
+            pages_text = []
+            for bi, batch in enumerate(batches, start=1):
+                log(f"PaddleOCR 辨識中…（第 {bi}/{len(batches)} 批）")
+                pages_text.extend(_ordered_pages(_ocr_batch(batch), len(batch)))
+            full_text = "\n".join(
+                f"--- 第 {i} 頁 ---\n{t}" for i, t in enumerate(pages_text, start=1))
     finally:
-        try:
-            Path(tmp).unlink()
-        except OSError:
-            pass
+        shutil.rmtree(workdir, ignore_errors=True)
 
     if corrector == "deepseek":
         log("DeepSeek 校正中…")

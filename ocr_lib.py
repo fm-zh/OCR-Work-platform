@@ -205,6 +205,53 @@ def render_hidpi(pdf: Path, dpi: int) -> list[Image.Image]:
     return images
 
 
+# 單頁渲染像素上限。A4 在 700 DPI 約 47 Mpx，故 50 Mpx 不會影響正常 PDF；
+# 但能擋住「把原本就是高解析圖檔再用 700 DPI 放大」造成的記憶體爆炸
+# （放大已光柵化的圖不會增加辨識資訊，只是浪費記憶體）。
+MAX_RENDER_MEGAPIXELS = 50.0
+
+
+def iter_hidpi(pdf: Path, dpi: int):
+    """逐頁 render（generator 版的 render_hidpi）。
+
+    一次只在記憶體中保留「一頁」的影像，呼叫端用完即可釋放，
+    用於高 DPI、多頁文件以避免一次載入全部頁面而耗盡記憶體。
+    若某頁在指定 DPI 下會超過 MAX_RENDER_MEGAPIXELS，會自動降比例以控制記憶體。
+    """
+    with fitz.open(pdf) as doc:
+        for page in doc:
+            scale = dpi / 72.0
+            r = page.rect
+            mp = (r.width * scale) * (r.height * scale) / 1e6
+            if mp > MAX_RENDER_MEGAPIXELS:
+                scale *= (MAX_RENDER_MEGAPIXELS / mp) ** 0.5
+            pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
+            yield Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+
+
+def pack_paths_to_pdf(image_paths, dest, dpi: int = DEFAULT_DPI):
+    """把「磁碟上的多張圖片」逐一組成多頁 PDF（記憶體只碰一頁）。
+
+    與 pack_to_pdf 不同：輸入是檔案路徑而非已載入的 Image，且用 fitz 逐頁嵌入、
+    每頁處理完即釋放，記憶體用量與總頁數無關。頁面實體尺寸依 `dpi` 還原，
+    讓下游 OCR 取得正確的解析度語意。輸入若為 JPEG，會原樣嵌入（不重新壓縮）。
+    """
+    paths = [str(p) for p in image_paths]
+    if not paths:
+        raise ValueError("no images to pack")
+    out = fitz.open()
+    try:
+        for p in paths:
+            with Image.open(p) as im:          # 只讀檔頭取尺寸，不載入像素
+                w, h = im.size
+            page = out.new_page(width=w / dpi * 72.0, height=h / dpi * 72.0)
+            page.insert_image(page.rect, filename=p)
+        out.save(str(dest))
+    finally:
+        out.close()
+    return dest
+
+
 # ---------------------------------------------------------------------------
 # Born-digital PDF text layer (skip OCR when the PDF already has real text)
 # ---------------------------------------------------------------------------
