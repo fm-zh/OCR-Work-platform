@@ -211,22 +211,26 @@ def render_hidpi(pdf: Path, dpi: int) -> list[Image.Image]:
 MAX_RENDER_MEGAPIXELS = 50.0
 
 
-def iter_hidpi(pdf: Path, dpi: int):
-    """逐頁 render（generator 版的 render_hidpi）。
+def iter_hidpi(pdf: Path, dpi: int, pages=None):
+    """逐頁 render（generator）。yield (page_no, image)，page_no 為 1-based 原始頁碼。
 
-    一次只在記憶體中保留「一頁」的影像，呼叫端用完即可釋放，
-    用於高 DPI、多頁文件以避免一次載入全部頁面而耗盡記憶體。
+    一次只在記憶體中保留「一頁」的影像，呼叫端用完即可釋放。
+    `pages` 給定時（1-based 可疊代集合）只渲染這些頁，其餘頁在 get_pixmap 前
+    直接跳過——這是「選頁辨識」省時間／省記憶體的來源。
     若某頁在指定 DPI 下會超過 MAX_RENDER_MEGAPIXELS，會自動降比例以控制記憶體。
     """
+    want = set(pages) if pages is not None else None
     with fitz.open(pdf) as doc:
-        for page in doc:
+        for idx, page in enumerate(doc, start=1):
+            if want is not None and idx not in want:
+                continue
             scale = dpi / 72.0
             r = page.rect
             mp = (r.width * scale) * (r.height * scale) / 1e6
             if mp > MAX_RENDER_MEGAPIXELS:
                 scale *= (MAX_RENDER_MEGAPIXELS / mp) ** 0.5
             pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
-            yield Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+            yield idx, Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
 
 
 def pack_paths_to_pdf(image_paths, dest, dpi: int = DEFAULT_DPI):

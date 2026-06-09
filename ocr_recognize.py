@@ -90,7 +90,7 @@ def recognize(path, corrector: str = "claude", deepseek_key: str = "",
     try:
         # 逐頁 render→去紅字→存暫存 JPEG（單一壓縮、維持 DPI 與畫質）
         page_files = []  # (path, size_bytes)
-        for i, im in enumerate(ocr_lib.iter_hidpi(path, dpi), start=1):
+        for i, im in ocr_lib.iter_hidpi(path, dpi):
             g = red_to_black(im)
             im.close()
             pp = workdir / f"p{i:04d}.jpg"
