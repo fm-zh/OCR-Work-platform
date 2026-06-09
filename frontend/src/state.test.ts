@@ -39,3 +39,37 @@ describe('reducer', () => {
     expect(reducer(dirty, { type: 'RESET' })).toEqual(initialState)
   })
 })
+
+const META10: JobMeta = {
+  job_id: 'j1', file_name: 'a.pdf', n_pages: 10,
+  is_born_digital: false, status: 'created',
+}
+
+describe('selected pages reducer', () => {
+  it('TOGGLE_PAGE adds then removes, kept sorted', () => {
+    let s = reducer(initialState, { type: 'TOGGLE_PAGE', page: 5 })
+    s = reducer(s, { type: 'TOGGLE_PAGE', page: 2 })
+    expect(s.selected).toEqual([2, 5])
+    s = reducer(s, { type: 'TOGGLE_PAGE', page: 5 })
+    expect(s.selected).toEqual([2])
+  })
+  it('SET_SELECTED replaces selection', () => {
+    const s = reducer(initialState, { type: 'SET_SELECTED', pages: [8, 3, 3] })
+    expect(s.selected).toEqual([3, 8])
+  })
+  it('SELECT_ALL fills 1..n', () => {
+    const s = reducer({ ...initialState, meta: META10 },
+      { type: 'SELECT_ALL' })
+    expect(s.selected).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+  })
+  it('CLEAR_SELECTED empties', () => {
+    const s = reducer({ ...initialState, selected: [1, 2] },
+      { type: 'CLEAR_SELECTED' })
+    expect(s.selected).toEqual([])
+  })
+  it('SET_META clears selection', () => {
+    const s = reducer({ ...initialState, selected: [1, 2] },
+      { type: 'SET_META', meta: META10 })
+    expect(s.selected).toEqual([])
+  })
+})
