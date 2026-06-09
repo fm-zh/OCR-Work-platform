@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, Dispatch } from 'react'
 import type { AppState, Action } from '../state'
 import * as api from '../api'
+import { parseRange, formatRange } from '../lib/pageRange'
 
 export function Step1Upload({ state, dispatch }: { state: AppState; dispatch: Dispatch<Action> }) {
   const { meta } = state
@@ -30,7 +31,7 @@ export function Step1Upload({ state, dispatch }: { state: AppState; dispatch: Di
     setErr(null)
     setRecognizing(true)
     try {
-      await api.startRecognize(meta.job_id)
+      await api.startRecognize(meta.job_id, state.selected)
     } catch (ex) {
       setErr(String(ex))
       setRecognizing(false)
@@ -78,25 +79,53 @@ export function Step1Upload({ state, dispatch }: { state: AppState; dispatch: Di
               ? `🔎 內含文字層（born-digital）→ 直接擷取文字層（${meta.n_pages} 頁）。`
               : `🔎 掃描影像／截圖 → PaddleOCR ＋ DeepSeek（${meta.n_pages} 頁）。`}
           </p>
-          {meta.n_pages > 1 && (
+
+          <div className="selbar">
             <label>
-              預覽頁碼：
-              <select
-                value={state.curPage}
-                onChange={(e) => dispatch({ type: 'SET_PAGE', page: Number(e.target.value) })}
-              >
-                {Array.from({ length: meta.n_pages }, (_, i) => i + 1).map((n) => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </select>
+              選擇頁碼：
+              <input
+                type="text"
+                placeholder="例如 3,5,8-10"
+                value={formatRange(state.selected)}
+                onChange={(e) =>
+                  dispatch({ type: 'SET_SELECTED',
+                             pages: parseRange(e.target.value, meta.n_pages) })}
+                disabled={recognizing}
+              />
             </label>
-          )}
-          <div className="thumb">
-            <img src={api.pageImageUrl(meta.job_id, state.curPage)} alt={`第 ${state.curPage} 頁`} />
+            <button type="button" onClick={() => dispatch({ type: 'SELECT_ALL' })}
+                    disabled={recognizing}>全選</button>
+            <button type="button" onClick={() => dispatch({ type: 'CLEAR_SELECTED' })}
+                    disabled={recognizing}>全不選</button>
+            <span className="count">已選 {state.selected.length} / {meta.n_pages} 頁</span>
           </div>
-          <button className="primary" onClick={onRecognize} disabled={recognizing}>
-            {recognizing ? '辨識中…' : '✅ 確認無誤，開始辨識'}
+
+          <div className="thumbgrid">
+            {Array.from({ length: meta.n_pages }, (_, i) => i + 1).map((n) => {
+              const on = state.selected.includes(n)
+              return (
+                <button
+                  key={n}
+                  type="button"
+                  className={on ? 'thumbcell on' : 'thumbcell'}
+                  onClick={() => dispatch({ type: 'TOGGLE_PAGE', page: n })}
+                  disabled={recognizing}
+                >
+                  <img src={api.pageImageUrl(meta.job_id, n)} alt={`第 ${n} 頁`} />
+                  <span className="pno">{n}</span>
+                  {on && <span className="tick">✓</span>}
+                </button>
+              )
+            })}
+          </div>
+
+          <button className="primary" onClick={onRecognize}
+                  disabled={recognizing || state.selected.length === 0}>
+            {recognizing ? '辨識中…' : '✅ 開始辨識（已選 ' + state.selected.length + ' 頁）'}
           </button>
+          {state.selected.length === 0 && !recognizing && (
+            <p className="hint">請至少選擇一頁</p>
+          )}
           {recognizing && state.status?.progress && (
             <p className="progress">
               {state.status.progress.message}（{state.status.progress.percent}%）

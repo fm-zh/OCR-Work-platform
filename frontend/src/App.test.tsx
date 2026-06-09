@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react'
 import App from './App'
 
 vi.mock('./api', () => ({
+  MAX_UPLOAD_MB: 20,
   createJob: vi.fn(),
   startRecognize: vi.fn(),
   getStatus: vi.fn(),
