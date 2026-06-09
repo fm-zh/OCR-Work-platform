@@ -42,3 +42,7 @@ class JobStatus(BaseModel):
 class ExcelRequest(BaseModel):
     file_name: str
     sheets: Dict[str, Sheet]
+
+
+class RecognizeRequest(BaseModel):
+    pages: List[int]

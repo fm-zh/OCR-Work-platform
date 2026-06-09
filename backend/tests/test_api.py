@@ -42,7 +42,7 @@ def test_page_image_returns_png():
 
 def test_recognize_then_poll_done():
     jid = _upload().json()["job_id"]
-    r = client.post(f"/api/jobs/{jid}/recognize")
+    r = client.post(f"/api/jobs/{jid}/recognize", json={"pages": [1]})
     assert r.status_code == 200
     assert r.json()["status"] in ("running", "done")
     s = None

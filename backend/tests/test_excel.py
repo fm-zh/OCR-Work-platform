@@ -74,7 +74,7 @@ def test_structure_endpoint_flow(monkeypatch):
         jid = _client.post("/api/jobs",
                            files={"file": ("file3.pdf", f, "application/pdf")}).json()["job_id"]
     assert _client.post(f"/api/jobs/{jid}/structure").status_code == 409
-    _client.post(f"/api/jobs/{jid}/recognize")
+    _client.post(f"/api/jobs/{jid}/recognize", json={"pages": [1]})
     for _ in range(60):
         if _client.get(f"/api/jobs/{jid}").json()["status"] in ("done", "error"):
             break

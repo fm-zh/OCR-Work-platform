@@ -118,3 +118,35 @@ def test_start_recognition_passes_pages_to_engine():
     cur = store.get(job.job_id)
     assert cur.status == "done"
     assert sorted(cur.pages.keys()) == ["1"]
+
+
+from fastapi.testclient import TestClient  # noqa: E402
+from app.main import app  # noqa: E402
+
+_client = TestClient(app)
+
+
+def _upload_born():
+    with open(BORN_FIXTURE, "rb") as f:
+        return _client.post(
+            "/api/jobs",
+            files={"file": ("file3.pdf", f, "application/pdf")}).json()["job_id"]
+
+
+def test_recognize_rejects_empty_pages():
+    jid = _upload_born()
+    r = _client.post(f"/api/jobs/{jid}/recognize", json={"pages": []})
+    assert r.status_code == 400
+
+
+def test_recognize_rejects_out_of_range_pages():
+    jid = _upload_born()  # 此檔 1 頁
+    r = _client.post(f"/api/jobs/{jid}/recognize", json={"pages": [2]})
+    assert r.status_code == 400
+
+
+def test_recognize_accepts_valid_pages():
+    jid = _upload_born()
+    r = _client.post(f"/api/jobs/{jid}/recognize", json={"pages": [1]})
+    assert r.status_code == 200
+    assert r.json()["status"] in ("running", "done")
