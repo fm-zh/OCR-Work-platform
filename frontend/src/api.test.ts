@@ -48,3 +48,18 @@ describe('api', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/jobs/x/structure', expect.objectContaining({ method: 'POST' }))
   })
 })
+
+describe('startRecognize', () => {
+  it('posts pages as JSON body', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, json: async () => ({ job_id: 'j1', status: 'running' }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    await api.startRecognize('j1', [3, 5, 8])
+    const [url, opts] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/jobs/j1/recognize')
+    expect(opts.method).toBe('POST')
+    expect(opts.headers['Content-Type']).toBe('application/json')
+    expect(JSON.parse(opts.body)).toEqual({ pages: [3, 5, 8] })
+  })
+})
