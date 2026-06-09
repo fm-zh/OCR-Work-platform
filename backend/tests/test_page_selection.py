@@ -41,3 +41,59 @@ def test_iter_hidpi_none_yields_all_with_page_no():
         assert nos == [1, 2, 3]
     finally:
         pdf.unlink()
+
+
+import ocr_recognize  # noqa: E402
+
+
+def _born_pdf(n_pages: int) -> Path:
+    """產生 n 頁、每頁含足量文字層的 PDF（has_text_layer 為真）。"""
+    doc = fitz.open()
+    for i in range(n_pages):
+        page = doc.new_page(width=300, height=400)
+        page.insert_text((40, 60),
+                         f"page {i + 1} 資產負債表 合計 1234567 現金 8900",
+                         fontsize=11)
+    fd, path = tempfile.mkstemp(suffix=".pdf")
+    import os
+    os.close(fd)
+    doc.save(path)
+    doc.close()
+    return Path(path)
+
+
+def test_remap_to_original_maps_positional_to_selected():
+    out = ocr_recognize._remap_to_original({1: "a", 2: "b", 3: "c"}, [3, 5, 8])
+    assert out == {3: "a", 5: "b", 8: "c"}
+
+
+def test_recognize_born_digital_filters_selected_pages():
+    pdf = _born_pdf(4)
+    try:
+        res = ocr_recognize.recognize(pdf, pages=[2, 4])
+        assert res["mode"] == "文字層擷取"
+        assert sorted(res["pages"].keys()) == [2, 4]
+    finally:
+        pdf.unlink()
+
+
+def test_recognize_scanned_remaps_to_original_pages(monkeypatch):
+    pdf = _blank_pdf(8)
+
+    def fake_ocr_file(path):
+        # 模擬 OCR 依「送進去 PDF 內第幾頁」回位置編號（送了 3 頁 → 1/2/3）
+        return {"full_text": "--- 第 1 頁 ---\nA\n--- 第 2 頁 ---\nB\n--- 第 3 頁 ---\nC"}
+
+    monkeypatch.setattr(ocr_lib, "ocr_file", fake_ocr_file)
+    monkeypatch.setattr(
+        ocr_recognize.llm_correct, "correct_via_deepseek",
+        lambda text, key, model, timeout: text)  # 校正回傳原文
+
+    try:
+        res = ocr_recognize.recognize(
+            pdf, corrector="deepseek", deepseek_key="x", pages=[3, 5, 8])
+        assert sorted(res["pages"].keys()) == [3, 5, 8]
+        assert res["pages"][3].strip() == "A"
+        assert res["pages"][8].strip() == "C"
+    finally:
+        pdf.unlink()

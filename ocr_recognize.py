@@ -64,8 +64,22 @@ def _split_pages(corrected: str) -> dict[int, str]:
     return pages
 
 
+def _remap_to_original(pages_dict: dict, selected) -> dict:
+    """把位置編號（1..M）的結果 dict 換回原始頁碼。
+
+    `selected` 為使用者選的原始頁碼；排序後第 k 個位置 → 第 k 個原始頁碼。
+    例：selected=[3,5,8]、pages_dict={1:..,2:..,3:..} → {3:..,5:..,8:..}。
+    """
+    order = sorted(selected)
+    out: dict = {}
+    for k, v in sorted(pages_dict.items()):
+        if 1 <= k <= len(order):
+            out[order[k - 1]] = v
+    return out
+
+
 def recognize(path, corrector: str = "claude", deepseek_key: str = "",
-              dpi: int = 700, progress=None) -> dict:
+              dpi: int = 700, progress=None, pages=None) -> dict:
     """Recognize a PDF / image file. `corrector` ∈ {"claude","deepseek"}.
 
     `progress(msg)` — optional callback for UI status updates.
@@ -79,8 +93,11 @@ def recognize(path, corrector: str = "claude", deepseek_key: str = "",
     # ---- Route 1: born-digital PDF → text layer (no OCR needed) -------------
     if ocr_lib.has_text_layer(path):
         log("偵測到內嵌文字層（born-digital），直接擷取並重建表格…")
-        pages = ocr_lib.extract_text_layer(path)
-        return {"mode": "文字層擷取", "pages": pages, "corrector": "（文字層，未經 LLM）"}
+        out_pages = ocr_lib.extract_text_layer(path)
+        if pages is not None:
+            want = set(pages)
+            out_pages = {k: v for k, v in out_pages.items() if k in want}
+        return {"mode": "文字層擷取", "pages": out_pages, "corrector": "（文字層，未經 LLM）"}
 
     # ---- Route 2: image / scanned → PaddleOCR + LLM correction --------------
     # 逐頁串流：render 一頁 → 去紅字 → 存暫存 JPEG → 釋放，記憶體只跟單頁有關，
@@ -90,7 +107,7 @@ def recognize(path, corrector: str = "claude", deepseek_key: str = "",
     try:
         # 逐頁 render→去紅字→存暫存 JPEG（單一壓縮、維持 DPI 與畫質）
         page_files = []  # (path, size_bytes)
-        for i, im in ocr_lib.iter_hidpi(path, dpi):
+        for i, im in ocr_lib.iter_hidpi(path, dpi, pages=pages):
             g = red_to_black(im)
             im.close()
             pp = workdir / f"p{i:04d}.jpg"
@@ -146,6 +163,8 @@ def recognize(path, corrector: str = "claude", deepseek_key: str = "",
         cname = "Claude CLI"
         mode = "PaddleOCR + Claude"
 
-    pages = _split_pages(corrected)
-    pages = ocr_postprocess.post_process(pages)
-    return {"mode": mode, "pages": pages, "corrector": cname}
+    out_pages = _split_pages(corrected)
+    out_pages = ocr_postprocess.post_process(out_pages)
+    if pages is not None:
+        out_pages = _remap_to_original(out_pages, pages)
+    return {"mode": mode, "pages": out_pages, "corrector": cname}
