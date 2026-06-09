@@ -97,3 +97,24 @@ def test_recognize_scanned_remaps_to_original_pages(monkeypatch):
         assert res["pages"][8].strip() == "C"
     finally:
         pdf.unlink()
+
+
+import time as _time
+
+from app.jobs import JobStore  # noqa: E402
+
+BORN_FIXTURE = r"E:\PJ_OCR\test\3.資產負債表測試-此為可複製文字之PDF.pdf"
+
+
+def test_start_recognition_passes_pages_to_engine():
+    store = JobStore()
+    job = store.create("file3.pdf", Path(BORN_FIXTURE).read_bytes())
+    started = store.start_recognition(job.job_id, pages=[1])
+    assert started.selected == [1]
+    for _ in range(60):
+        if store.get(job.job_id).status in ("done", "error"):
+            break
+        _time.sleep(0.2)
+    cur = store.get(job.job_id)
+    assert cur.status == "done"
+    assert sorted(cur.pages.keys()) == ["1"]

@@ -26,6 +26,7 @@ class Job:
     mode: Optional[str] = None
     pages: Optional[dict] = None      # {str(page_no): text}
     error: Optional[str] = None
+    selected: Optional[list] = None   # 實際辨識的原始頁碼，如 [3,5,8]
     structure_status: str = "idle"   # idle | running | done | error
     tables: Optional[dict] = None     # {"1": {"columns":[...], "rows":[[...]]}}
     structure_error: Optional[str] = None
@@ -82,12 +83,13 @@ class JobStore:
         p = Path(job.preview_dir) / f"page_{page_no}.png"
         return p if p.is_file() else None
 
-    def start_recognition(self, job_id: str) -> Optional[Job]:
+    def start_recognition(self, job_id: str, pages=None) -> Optional[Job]:
         job = self.get(job_id)
         if job is None:
             return None
         if job.status in ("running", "done"):
             return job
+        job.selected = list(pages) if pages is not None else None
         job.status = "running"
         job.progress = {"message": "準備中…", "percent": 0}
         self._pool.submit(self._run, job_id)
@@ -104,7 +106,8 @@ class JobStore:
             job.progress = {"message": msg, "percent": min(90, counter["n"] * 22)}
 
         try:
-            res = engine.recognize(job.file_path, progress=_progress)
+            res = engine.recognize(job.file_path, progress=_progress,
+                                    pages=job.selected)
             job.mode = res["mode"]
             job.pages = {str(k): v for k, v in res["pages"].items()}
             job.progress = {"message": "完成", "percent": 100}
