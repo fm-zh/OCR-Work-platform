@@ -64,3 +64,45 @@ def test_delete_then_404():
     jid = _upload().json()["job_id"]
     assert client.delete(f"/api/jobs/{jid}").status_code == 204
     assert client.get(f"/api/jobs/{jid}").status_code == 404
+
+
+import io
+import openpyxl
+
+
+def _excel_req(merge: bool):
+    return {
+        "file_name": "2024財報.pdf",
+        "sheets": {
+            "1": {"columns": ["項目", "金額"], "rows": [["現金", "100"]]},
+            "2": {"columns": ["項目", "金額"], "rows": [["項目", "金額"], ["存貨", "300"]]},
+        },
+        "merge": merge,
+    }
+
+
+def test_excel_merge_true_single_sheet_named_by_file():
+    r = client.post("/api/excel", json=_excel_req(True))
+    assert r.status_code == 200
+    wb = openpyxl.load_workbook(io.BytesIO(r.content))
+    assert wb.sheetnames == ["2024財報"]                 # 檔名主檔名命名
+    ws = wb["2024財報"]
+    # 表頭列 + 現金 + 存貨（第2頁重複表頭列被移除）
+    values = [[c.value for c in row] for row in ws.iter_rows()]
+    assert values == [["項目", "金額"], ["現金", "100"], ["存貨", "300"]]
+
+
+def test_excel_merge_false_keeps_per_page_sheets():
+    r = client.post("/api/excel", json=_excel_req(False))
+    assert r.status_code == 200
+    wb = openpyxl.load_workbook(io.BytesIO(r.content))
+    assert wb.sheetnames == ["第1頁", "第2頁"]
+
+
+def test_excel_merge_defaults_false_when_omitted():
+    body = _excel_req(False)
+    del body["merge"]
+    r = client.post("/api/excel", json=body)
+    assert r.status_code == 200
+    wb = openpyxl.load_workbook(io.BytesIO(r.content))
+    assert wb.sheetnames == ["第1頁", "第2頁"]
