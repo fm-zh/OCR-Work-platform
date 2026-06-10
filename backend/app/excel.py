@@ -89,8 +89,14 @@ def structure_page(text: str, api_key: str, model: str = "deepseek-chat",
 _ILLEGAL_SHEET = re.compile(r"[\[\]:*?/\\]")
 
 
+def _sanitize_sheet_title(name: str) -> str:
+    """剔除 Excel 工作表名非法字元並截到 31 字；空字串以 'Sheet' 保底。"""
+    s = _ILLEGAL_SHEET.sub("", name)[:31]
+    return s or "Sheet"
+
+
 def _sheet_name(page_no: int) -> str:
-    return _ILLEGAL_SHEET.sub("", f"第{page_no}頁")[:31]
+    return _sanitize_sheet_title(f"第{page_no}頁")
 
 
 def merge_sheets(pages_in_order: list[dict]) -> dict:
@@ -132,13 +138,16 @@ def merge_sheets(pages_in_order: list[dict]) -> dict:
     return {"columns": header, "rows": out_rows}
 
 
-def build_workbook(pages_structured: dict) -> bytes:
-    """{page_no: {columns, rows}} → .xlsx bytes（每頁一個工作表）。"""
+def build_workbook(pages_structured: dict, sheet_titles: dict | None = None) -> bytes:
+    """{page_no: {columns, rows}} → .xlsx bytes（每頁一個工作表）。
+    sheet_titles 給定時，對應 page_no 改用自訂工作表名（會自動剔除非法字元、截 31 字）。"""
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
     for page_no in sorted(pages_structured):
         st = pages_structured[page_no]
-        ws = wb.create_sheet(title=_sheet_name(page_no))
+        custom = (sheet_titles or {}).get(page_no)
+        title = _sanitize_sheet_title(custom) if custom else _sheet_name(page_no)
+        ws = wb.create_sheet(title=title)
         columns = st.get("columns") or []
         if columns:
             ws.append([str(c) for c in columns])

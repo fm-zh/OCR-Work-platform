@@ -62,3 +62,31 @@ def test_single_page_and_empty():
     assert merge_sheets([]) == {"columns": [], "rows": []}
     one = merge_sheets([{"columns": ["a"], "rows": [["1"]]}])
     assert one == {"columns": ["a"], "rows": [["1"]]}
+
+
+import io
+import openpyxl
+from app.excel import build_workbook
+
+
+def test_build_workbook_custom_sheet_title():
+    data = build_workbook({1: {"columns": ["a"], "rows": [["1"]]}},
+                          sheet_titles={1: "2024財報"})
+    wb = openpyxl.load_workbook(io.BytesIO(data))
+    assert wb.sheetnames == ["2024財報"]
+
+
+def test_build_workbook_custom_title_sanitized_and_truncated():
+    long_name = "報表/名稱:" + "X" * 40
+    data = build_workbook({1: {"columns": [], "rows": [["1"]]}},
+                          sheet_titles={1: long_name})
+    wb = openpyxl.load_workbook(io.BytesIO(data))
+    name = wb.sheetnames[0]
+    assert "/" not in name and ":" not in name      # 非法字元剔除
+    assert len(name) <= 31                            # Excel 上限
+
+
+def test_build_workbook_default_naming_unchanged():
+    data = build_workbook({3: {"columns": ["a"], "rows": [["1"]]}})
+    wb = openpyxl.load_workbook(io.BytesIO(data))
+    assert wb.sheetnames == ["第3頁"]
