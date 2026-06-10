@@ -99,6 +99,38 @@ def test_recognize_scanned_remaps_to_original_pages(monkeypatch):
         pdf.unlink()
 
 
+def test_recognize_scanned_multibatch_remaps_to_original_pages(monkeypatch):
+    pdf = _blank_pdf(8)
+
+    # 強制每頁各自成批：把單檔上限調到極小
+    monkeypatch.setattr(ocr_lib, "MAX_UPLOAD_BYTES", 1)
+
+    calls = {"n": 0}
+    texts = ["A", "B", "C"]
+
+    def fake_ocr_file(path):
+        # 每批一頁；OCR 依「批內位置」回第 1 頁
+        i = calls["n"]
+        calls["n"] += 1
+        return {"full_text": f"--- 第 1 頁 ---\n{texts[i]}"}
+
+    monkeypatch.setattr(ocr_lib, "ocr_file", fake_ocr_file)
+    monkeypatch.setattr(
+        ocr_recognize.llm_correct, "correct_via_deepseek",
+        lambda text, key, model, timeout: text)
+
+    try:
+        res = ocr_recognize.recognize(
+            pdf, corrector="deepseek", deepseek_key="x", pages=[3, 5, 8])
+        assert calls["n"] == 3                      # 確實跑了 3 批
+        assert sorted(res["pages"].keys()) == [3, 5, 8]
+        assert res["pages"][3].strip() == "A"
+        assert res["pages"][5].strip() == "B"
+        assert res["pages"][8].strip() == "C"
+    finally:
+        pdf.unlink()
+
+
 import time as _time
 
 from app.jobs import JobStore  # noqa: E402
