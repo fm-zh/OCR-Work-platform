@@ -44,7 +44,10 @@ function editHeader(t: Sheet, col: number, value: string): Sheet {
 export function reducer(s: AppState, a: Action): AppState {
   switch (a.type) {
     case 'SET_META':
-      return { ...s, meta: a.meta, status: null, tables: {}, view: 'text', curPage: 1, selected: [] }
+      return {
+        ...s, meta: a.meta, status: null, tables: {}, view: 'text', curPage: 1,
+        selected: a.meta && a.meta.n_pages === 1 ? [1] : [],
+      }
     case 'SET_STATUS':
       return { ...s, status: a.status }
     case 'SET_PAGE':

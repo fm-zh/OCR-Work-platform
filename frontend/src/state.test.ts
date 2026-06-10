@@ -72,4 +72,10 @@ describe('selected pages reducer', () => {
       { type: 'SET_META', meta: META10 })
     expect(s.selected).toEqual([])
   })
+  it('SET_META auto-selects the only page for single-page files', () => {
+    const single: JobMeta = { ...META10, n_pages: 1 }
+    const s = reducer({ ...initialState, selected: [9] },
+      { type: 'SET_META', meta: single })
+    expect(s.selected).toEqual([1])
+  })
 })
