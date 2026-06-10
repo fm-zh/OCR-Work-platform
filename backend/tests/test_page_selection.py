@@ -135,12 +135,20 @@ import time as _time
 
 from app.jobs import JobStore  # noqa: E402
 
-BORN_FIXTURE = r"E:\PJ_OCR\test\3.資產負債表測試-此為可複製文字之PDF.pdf"
+
+def _born_bytes() -> bytes:
+    """產生一份 1 頁 born-digital PDF 的位元組（取代硬編碼的本機 fixture，
+    讓測試在任何機器／CI 都能跑）。"""
+    pdf = _born_pdf(1)
+    try:
+        return pdf.read_bytes()
+    finally:
+        pdf.unlink()
 
 
 def test_start_recognition_passes_pages_to_engine():
     store = JobStore()
-    job = store.create("file3.pdf", Path(BORN_FIXTURE).read_bytes())
+    job = store.create("file3.pdf", _born_bytes())
     started = store.start_recognition(job.job_id, pages=[1])
     assert started.selected == [1]
     for _ in range(60):
@@ -159,10 +167,10 @@ _client = TestClient(app)
 
 
 def _upload_born():
-    with open(BORN_FIXTURE, "rb") as f:
-        return _client.post(
-            "/api/jobs",
-            files={"file": ("file3.pdf", f, "application/pdf")}).json()["job_id"]
+    return _client.post(
+        "/api/jobs",
+        files={"file": ("file3.pdf", _born_bytes(), "application/pdf")},
+    ).json()["job_id"]
 
 
 def test_recognize_rejects_empty_pages():
