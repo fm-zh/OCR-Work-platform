@@ -289,3 +289,16 @@ table.grid input:focus {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
+
+.selbar { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; margin: .5rem 0; }
+.selbar input[type=text] { width: 12rem; }
+.selbar .count { color: #555; font-size: .9rem; }
+.thumbgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+             gap: .5rem; margin: .5rem 0; max-height: 60vh; overflow: auto; }
+.thumbcell { position: relative; padding: 2px; border: 2px solid transparent;
+             background: #fafafa; cursor: pointer; }
+.thumbcell img { width: 100%; display: block; }
+.thumbcell.on { border-color: #2563eb; }
+.thumbcell .pno { position: absolute; left: 4px; bottom: 4px; font-size: .75rem;
+                  background: rgba(0,0,0,.6); color: #fff; padding: 0 4px; border-radius: 3px; }
+.thumbcell .tick { position: absolute; right: 4px; top: 4px; color: #2563eb; font-weight: 700; }

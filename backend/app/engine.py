@@ -33,9 +33,10 @@ def render_previews(path, out_dir) -> int:
     return len(imgs)
 
 
-def recognize(path, progress=None) -> dict:
-    """固定 PaddleOCR+DeepSeek（born-digital 自動文字層）。回傳 {mode, pages:{int:str}}。"""
+def recognize(path, progress=None, pages=None) -> dict:
+    """固定 PaddleOCR+DeepSeek（born-digital 自動文字層）。回傳 {mode, pages:{int:str}}。
+    pages 給定時只辨識選到的頁（原始頁碼）。"""
     res = ocr_recognize.recognize(
         str(path), corrector="deepseek",
-        deepseek_key=resolve_deepseek_key(), progress=progress)
+        deepseek_key=resolve_deepseek_key(), progress=progress, pages=pages)
     return {"mode": res["mode"], "pages": res["pages"]}

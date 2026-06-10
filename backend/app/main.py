@@ -85,10 +85,18 @@ def page_image(job_id: str, page_no: int) -> FileResponse:
 
 
 @app.post("/api/jobs/{job_id}/recognize")
-def recognize(job_id: str) -> dict:
-    job = store.start_recognition(job_id)
+def recognize(job_id: str, req: schemas.RecognizeRequest) -> dict:
+    job = store.get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="找不到任務")
+    pages = sorted(set(req.pages))
+    if not pages:
+        raise HTTPException(status_code=400, detail="請至少選擇一頁")
+    if pages[0] < 1 or pages[-1] > job.n_pages:
+        raise HTTPException(
+            status_code=400,
+            detail=f"頁碼超出範圍：本檔共 {job.n_pages} 頁")
+    job = store.start_recognition(job_id, pages=pages)
     return {"job_id": job.job_id, "status": job.status}
 
 

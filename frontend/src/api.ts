@@ -19,9 +19,19 @@ export async function createJob(file: File): Promise<JobMeta> {
   return r.json()
 }
 
-export async function startRecognize(jobId: string): Promise<{ job_id: string; status: string }> {
-  const r = await fetch(`${BASE}/jobs/${jobId}/recognize`, { method: 'POST' })
-  if (!r.ok) throw new Error(`辨識啟動失敗 (${r.status})`)
+export async function startRecognize(
+  jobId: string, pages: number[],
+): Promise<{ job_id: string; status: string }> {
+  const r = await fetch(`${BASE}/jobs/${jobId}/recognize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pages }),
+  })
+  if (!r.ok) {
+    let detail = ''
+    try { detail = (await r.json()).detail } catch { /* 無 JSON 內容 */ }
+    throw new Error(detail || `辨識啟動失敗 (${r.status})`)
+  }
   return r.json()
 }
 
