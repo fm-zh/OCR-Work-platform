@@ -35,7 +35,7 @@ describe('api', () => {
     const blob = new Blob(['x'])
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, blob: async () => blob })
     vi.stubGlobal('fetch', fetchMock)
-    const res = await api.exportExcel('f.pdf', { '1': { columns: ['a'], rows: [['b']] } })
+    const res = await api.exportExcel('f.pdf', { '1': { columns: ['a'], rows: [['b']] } }, false)
     expect(res).toBe(blob)
     expect(fetchMock).toHaveBeenCalledWith('/api/excel', expect.objectContaining({ method: 'POST' }))
   })
@@ -61,5 +61,20 @@ describe('startRecognize', () => {
     expect(opts.method).toBe('POST')
     expect(opts.headers['Content-Type']).toBe('application/json')
     expect(JSON.parse(opts.body)).toEqual({ pages: [3, 5, 8] })
+  })
+})
+
+describe('exportExcel', () => {
+  it('posts merge flag in JSON body', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, blob: async () => new Blob(['x']),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    await api.exportExcel('f.pdf', { '1': { columns: [], rows: [] } }, true)
+    const [url, opts] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/excel')
+    expect(JSON.parse(opts.body)).toEqual({
+      file_name: 'f.pdf', sheets: { '1': { columns: [], rows: [] } }, merge: true,
+    })
   })
 })

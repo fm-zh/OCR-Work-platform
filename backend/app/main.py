@@ -126,8 +126,13 @@ def export_excel(req: schemas.ExcelRequest) -> Response:
         except ValueError:
             continue
         structured[page_no] = {"columns": sheet.columns, "rows": sheet.rows}
-    data = excel.build_workbook(structured)
     stem = Path(req.file_name).stem or "result"
+    if req.merge:
+        pages_in_order = [structured[p] for p in sorted(structured)]
+        merged = excel.merge_sheets(pages_in_order)
+        data = excel.build_workbook({1: merged}, sheet_titles={1: stem})
+    else:
+        data = excel.build_workbook(structured)
     quoted = urllib.parse.quote(f"{stem}.xlsx")
     return Response(
         content=data,

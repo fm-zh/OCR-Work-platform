@@ -89,17 +89,65 @@ def structure_page(text: str, api_key: str, model: str = "deepseek-chat",
 _ILLEGAL_SHEET = re.compile(r"[\[\]:*?/\\]")
 
 
+def _sanitize_sheet_title(name: str) -> str:
+    """剔除 Excel 工作表名非法字元並截到 31 字；空字串以 'Sheet' 保底。"""
+    s = _ILLEGAL_SHEET.sub("", name)[:31]
+    return s or "Sheet"
+
+
 def _sheet_name(page_no: int) -> str:
-    return _ILLEGAL_SHEET.sub("", f"第{page_no}頁")[:31]
+    return _sanitize_sheet_title(f"第{page_no}頁")
 
 
-def build_workbook(pages_structured: dict) -> bytes:
-    """{page_no: {columns, rows}} → .xlsx bytes（每頁一個工作表）。"""
+def merge_sheets(pages_in_order: list[dict]) -> dict:
+    """把依頁碼排序的多頁 {columns, rows} 疊接清理成單一 {columns, rows}。
+
+    規則（見設計 §合併演算法）：
+    - 表頭取第一個 columns 非空的頁；全空則表頭為 []。
+    - 欄數 W：表頭非空 → len(表頭)；表頭空 → 各頁所有列中最長列長度。
+    - 逐頁疊接 rows：不附加任何頁的 columns；第一頁之後，若某頁第一列逐格
+      去空白後等於合併表頭，視為重複表頭並丟棄；列短於 W 右補空，列長於 W 保留。
+    """
+    header: list[str] = []
+    for p in pages_in_order:
+        cols = [str(c) for c in (p.get("columns") or [])]
+        if cols:
+            header = cols
+            break
+
+    if header:
+        width = len(header)
+    else:
+        width = 0
+        for p in pages_in_order:
+            for r in (p.get("rows") or []):
+                width = max(width, len(r))
+
+    header_trimmed = [h.strip() for h in header]
+    out_rows: list[list[str]] = []
+    for idx, p in enumerate(pages_in_order):
+        rows = [[("" if c is None else str(c)) for c in r]
+                for r in (p.get("rows") or [])]
+        if idx > 0 and header and rows:
+            if [c.strip() for c in rows[0]] == header_trimmed:
+                rows = rows[1:]
+        for r in rows:
+            if len(r) < width:
+                r = r + [""] * (width - len(r))
+            out_rows.append(r)
+    return {"columns": header, "rows": out_rows}
+
+
+def build_workbook(pages_structured: dict, sheet_titles: dict | None = None) -> bytes:
+    """{page_no: {columns, rows}} → .xlsx bytes（每頁一個工作表）。
+    sheet_titles 給定時，對應 page_no 改用自訂工作表名（會自動剔除非法字元、截 31 字）。"""
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
     for page_no in sorted(pages_structured):
         st = pages_structured[page_no]
-        ws = wb.create_sheet(title=_sheet_name(page_no))
+        custom = (sheet_titles or {}).get(page_no)
+        title = _sanitize_sheet_title(custom) if custom else _sheet_name(page_no)
+        ws = wb.create_sheet(title=title)
         columns = st.get("columns") or []
         if columns:
             ws.append([str(c) for c in columns])

@@ -42,6 +42,7 @@ class JobStatus(BaseModel):
 class ExcelRequest(BaseModel):
     file_name: str
     sheets: Dict[str, Sheet]
+    merge: bool = False
 
 
 class RecognizeRequest(BaseModel):

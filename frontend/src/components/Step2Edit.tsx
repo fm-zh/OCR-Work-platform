@@ -8,6 +8,7 @@ import { ZoomImage } from './ZoomImage'
 export function Step2Edit({ state, dispatch }: { state: AppState; dispatch: Dispatch<Action> }) {
   const { meta, status } = state
   const [excelBusy, setExcelBusy] = useState(false)
+  const [mergeExport, setMergeExport] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
   const structuring = status?.structure_status ?? 'idle'
@@ -79,7 +80,7 @@ export function Step2Edit({ state, dispatch }: { state: AppState; dispatch: Disp
         const t = state.tables[p]
         if (t) sheets[String(p)] = t
       }
-      const blob = await api.exportExcel(meta?.file_name ?? 'result', sheets)
+      const blob = await api.exportExcel(meta?.file_name ?? 'result', sheets, mergeExport)
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -169,6 +170,16 @@ export function Step2Edit({ state, dispatch }: { state: AppState; dispatch: Disp
         </div>
       </div>
       <div className="actions">
+        {pnos.length > 1 && (
+          <label className="mergeopt">
+            <input
+              type="checkbox"
+              checked={mergeExport}
+              onChange={(e) => setMergeExport(e.target.checked)}
+            />
+            全部頁合併成一張表
+          </label>
+        )}
         <button className="primary" onClick={downloadExcel} disabled={excelBusy || structuring !== 'done'}>
           {excelBusy ? '產生 Excel 中…' : '⬇ 下載 Excel'}
         </button>

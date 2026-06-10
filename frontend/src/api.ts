@@ -49,11 +49,13 @@ export function pageImageUrl(jobId: string, page: number): string {
   return `${BASE}/jobs/${jobId}/pages/${page}/image`
 }
 
-export async function exportExcel(fileName: string, sheets: Record<string, Sheet>): Promise<Blob> {
+export async function exportExcel(
+  fileName: string, sheets: Record<string, Sheet>, merge: boolean,
+): Promise<Blob> {
   const r = await fetch(`${BASE}/excel`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ file_name: fileName, sheets }),
+    body: JSON.stringify({ file_name: fileName, sheets, merge }),
   })
   if (!r.ok) throw new Error(`Excel 匯出失敗 (${r.status})`)
   return r.blob()
