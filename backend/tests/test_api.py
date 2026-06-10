@@ -106,3 +106,20 @@ def test_excel_merge_defaults_false_when_omitted():
     assert r.status_code == 200
     wb = openpyxl.load_workbook(io.BytesIO(r.content))
     assert wb.sheetnames == ["第1頁", "第2頁"]
+
+
+def test_excel_merge_true_all_empty_pages_single_named_sheet():
+    body = {
+        "file_name": "空報表.pdf",
+        "sheets": {
+            "1": {"columns": [], "rows": []},
+            "2": {"columns": [], "rows": []},
+        },
+        "merge": True,
+    }
+    r = client.post("/api/excel", json=body)
+    assert r.status_code == 200
+    wb = openpyxl.load_workbook(io.BytesIO(r.content))
+    assert wb.sheetnames == ["空報表"]          # 仍只有一張、以檔名命名
+    ws = wb["空報表"]
+    assert list(ws.iter_rows()) == []            # 無資料列
