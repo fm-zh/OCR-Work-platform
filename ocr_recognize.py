@@ -42,7 +42,10 @@ def red_to_black(im: Image.Image) -> Image.Image:
 
 def _ordered_pages(full_text: str, expected: int) -> list[str]:
     """把單批 OCR 的 full_text 依「--- 第 N 頁 ---」拆成有序的頁面文字清單。
-    用於多批辨識時把各批結果接回全域頁序。"""
+    用於多批辨識時把各批結果接回全域頁序。
+
+    限制：採位置式組裝——若 OCR 漏掉某選頁（如空白中間頁未輸出標記），
+    後續所有頁的位置會往前位移。詳見 _remap_to_original。"""
     d = _split_pages(full_text)
     if d:
         return [d.get(k, "") for k in sorted(d)]
@@ -69,6 +72,10 @@ def _remap_to_original(pages_dict: dict, selected) -> dict:
 
     `selected` 為使用者選的原始頁碼；排序後第 k 個位置 → 第 k 個原始頁碼。
     例：selected=[3,5,8]、pages_dict={1:..,2:..,3:..} → {3:..,5:..,8:..}。
+
+    已知限制：此為純位置式回填（第 k 個位置對應第 k 個選頁）。若 OCR 靜默
+    掉了某個選頁（例如空白／無內容的中間頁未輸出 --- 第 N 頁 --- 標記），
+    其後每一頁的原始頁碼標籤都會位移一格。此為位置式回填可接受的限制。
     """
     order = sorted(selected)
     out: dict = {}
