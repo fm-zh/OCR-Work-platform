@@ -47,13 +47,23 @@ import ocr_recognize  # noqa: E402
 
 
 def _born_pdf(n_pages: int) -> Path:
-    """產生 n 頁、每頁含足量文字層的 PDF（has_text_layer 為真）。"""
+    """產生 n 頁、每頁含足量文字層的 PDF。
+
+    每頁字數須超過 has_text_layer 的門檻（50 非空白字）才會被判為 born-digital；
+    has_text_layer 是加總全部頁，但本 helper 也用於單頁（_born_bytes），故每頁
+    都放多行、確保「單頁」也過門檻，避免單頁被誤判為掃描檔而走真實 OCR。"""
+    lines = [
+        "資產負債表 流動資產 現金及約當現金 1,234,567",
+        "應收帳款淨額 890,000 存貨 456,000 預付款項 78,900",
+        "非流動資產 不動產廠房及設備 5,600,000 合計 8,259,467",
+        "流動負債 應付帳款 320,000 待彌補虧損 (588,000)",
+    ]
     doc = fitz.open()
     for i in range(n_pages):
-        page = doc.new_page(width=300, height=400)
-        page.insert_text((40, 60),
-                         f"page {i + 1} 資產負債表 合計 1234567 現金 8900",
-                         fontsize=11)
+        page = doc.new_page(width=595, height=842)
+        page.insert_text((40, 50), f"第 {i + 1} 頁", fontsize=11)
+        for j, ln in enumerate(lines):
+            page.insert_text((40, 80 + j * 22), ln, fontsize=10)
     fd, path = tempfile.mkstemp(suffix=".pdf")
     import os
     os.close(fd)
