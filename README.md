@@ -1,63 +1,88 @@
 # 財報文件智慧辨識平台（OCR Work Platform）
 
-PaddleOCR ＋ Claude 的財務報表／稅報文件辨識網頁。三步驟分頁精靈：
-**① 上傳檔案 → ② 進行辨識 → ③ 輸出結果**。
+財務報表／稅報文件的智慧辨識網頁。前後端分離：**FastAPI 後端 ＋ React/Vite 前端**。
+三步驟精靈：**① 上傳檔案 → ② 辨識與對照編輯 → ③ 輸出 Excel**。
+
+線上版：https://ocr-platform.zhgpt.org
 
 ## 辨識方法（自動分流）
 
 | 檔案類型 | 處理方式 |
 |---|---|
-| 內含文字層的 PDF（born-digital） | 直接擷取文字層並重建表格列（數字 100% 精準，免 OCR/LLM） |
-| 掃描影像／截圖（PDF 或圖片） | PaddleOCR（700 DPI＋去紅印章/紅字）＋ Claude 校正＋財報後處理 |
+| 內含文字層的 PDF（born-digital） | 直接擷取文字層並重建表格列（數字 100% 精準、免 OCR）；表格結構化走 DeepSeek |
+| 掃描影像／截圖（PDF 或圖片） | 本地 PaddleOCR（GPU，含自動轉正）→ 以文字框座標**幾何重建表格** → OpenCC 簡轉繁 → DeepSeek 只修「截斷／錯字的中文科目名稱」（數字與欄位不動） |
 
-校正引擎可在介面選 **Claude**（最準、較慢）或 **DeepSeek**（快、需 API Key）。
+掃描檔的「幾何重建」利用每塊文字的 bbox 座標還原欄位，能正確處理**雙欄**（左資產／右負債）
+以及被 90° 擺放的**橫式寬表**——欄位與數字為確定性流程，DeepSeek 僅用於補回被掃描裁切的中文科目名稱。
+
+## 架構
+
+- **後端**（`backend/`，FastAPI）：任務管理、頁面渲染、辨識路由、Excel 匯出。
+- **本地 PaddleOCR worker**（`backend/paddle_worker.py`）：在獨立的 `paddleocr` conda 環境執行，
+  回傳每頁文字框的座標。後端以子程序呼叫（隔離 Python 版本／相依，避免衝突）。
+- **前端**（`frontend/`，React ＋ Vite）：三步驟 UI、原圖對照、表格線上編輯、Excel 下載。
 
 ## 安裝
 
+### 後端
 ```
-pip install -r requirements.txt
+pip install -r backend/requirements-backend.txt
+pip install -r requirements.txt          # ocr_lib 共用：pymupdf / opencv / numpy / pillow
 ```
 
-另需：
-- 私有 PaddleOCR API（已內建於 `ocr_lib.py`，submit→poll→result）。
-- Claude 校正需安裝 Claude Code CLI：`npm install -g @anthropic-ai/claude-code`
-  （若不使用 Claude，可在介面改選 DeepSeek）。
-
-## 啟動
-
+### 本地 PaddleOCR（掃描檔辨識用，獨立 conda 環境）
 ```
-streamlit run ocr_app.py --server.port 8502
+conda create -n paddleocr python=3.11 -y
+conda activate paddleocr
+# GPU（建議，需 NVIDIA + CUDA）：
+pip install paddlepaddle-gpu==3.3.1 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
+# 或 CPU：pip install paddlepaddle
+pip install paddleocr opencc
 ```
-或直接執行 `run.bat`，瀏覽器開啟 http://localhost:8502 。
+後端以環境變數 `PADDLE_OCR_PYTHON` 指定此環境的 python
+（預設 `~/miniconda3/envs/paddleocr/bin/python`）。
 
-## 進階版（ocr_app_pro.py）
+### 前端
+```
+cd frontend && npm install
+```
 
-比簡單版多「原圖對照」與「結果線上編輯」；辨識固定走 PaddleOCR ＋ DeepSeek
-（born-digital 自動文字層）。**兩步驟分頁，完成後自動跳轉下一步**：
-① 選擇檔案 → 預覽確認 → 進行辨識；② 辨識結果與對照編輯（左原圖可縮放、右可編輯、同名 .txt 下載）。
-
-**DeepSeek 金鑰以 `.env` 管理**（介面不再有輸入欄位）：在專案根目錄的 `.env` 設定
+### DeepSeek 金鑰
+表格結構化／科目名稱還原使用 DeepSeek。於專案根目錄 `.env`（或環境變數）設定：
 ```
 DEEPSEEK_API_KEY=你的金鑰
 ```
-系統啟動時自動讀取（`load_env_file`）；若作業系統已設同名環境變數，則以環境變數為準。
+系統啟動時自動讀取（`load_env_file`）；若作業系統已設同名環境變數則以其為準。
 
-啟動：`streamlit run ocr_app_pro.py --server.port 8503`，或執行 `run_pro.bat`，
-瀏覽器開 http://localhost:8503 。
+## 啟動（本地開發）
+
+```
+# 後端（:8000）
+cd backend && python -m uvicorn app.main:app --port 8000
+# 前端（:5173，dev 下 /api 由 Vite proxy 轉到後端）
+cd frontend && npm run dev
+```
+Swagger 文件：http://localhost:8000/docs ；瀏覽器開 http://localhost:5173 。
 
 ## 檔案結構
 
-| 檔案 | 說明 |
+| 路徑 | 說明 |
 |---|---|
-| `ocr_app.py` | 網頁（Streamlit 三步驟分頁精靈） |
-| `ocr_recognize.py` | 辨識引擎：`recognize(path, corrector='claude'|'deepseek')` 自動分流 |
-| `ocr_lib.py` | 核心：PaddleOCR API client、PDF 渲染、文字層擷取、前處理 |
-| `llm_correct.py` | Claude CLI／DeepSeek 校正 |
-| `ocr_postprocess.py` | 財報後處理（標題回補、簽署列、待彌補虧損、金額欄頭等） |
+| `backend/app/main.py` | FastAPI 路由（上傳／辨識／狀態／Excel／結構化） |
+| `backend/app/jobs.py` | 記憶體任務管理＋背景辨識／結構化 |
+| `backend/app/engine.py` | 辨識路由：born-digital→文字層；掃描→本地 PaddleOCR |
+| `backend/app/local_ocr.py` | 渲染→呼叫 worker→幾何重建→OpenCC 的編排 |
+| `backend/app/table_reconstruct.py` | 由 bbox 座標幾何重建表格 `{columns, rows}` |
+| `backend/app/excel.py` | DeepSeek 結構化／科目名稱還原＋openpyxl 產生 `.xlsx` |
+| `backend/paddle_worker.py` | 本地 PaddleOCR（在 paddleocr 環境執行，回傳座標） |
+| `ocr_lib.py` | PaddleOCR API client、PDF 渲染、文字層擷取、影像前處理 |
+| `ocr_recognize.py` | 辨識引擎（born-digital 文字層擷取；CLI／舊流程共用） |
+| `llm_correct.py` | Claude CLI／DeepSeek 文字校正 |
+| `ocr_postprocess.py` | 財報後處理（標題回補、簽署列等） |
+| `ocr_app_pro_helpers.py` | 共用輔助（檔案偵測、金鑰解析、`.env` 載入） |
+| `frontend/` | React ＋ Vite 前端 |
 
-## 前後端分離版（backend + frontend）
+## 部署
 
-- 後端 API（FastAPI）：`cd backend && run_api.bat`（或 `python -m uvicorn app.main:app --port 8000`），Swagger 文件 http://localhost:8000/docs 。
-- 前端 SPA（React+Vite）：先啟動後端，再 `cd frontend && run_frontend.bat`（或 `npm run dev`），開 http://localhost:5173 。dev 下 `/api` 由 Vite proxy 轉到 :8000。
-
-流程：① 選檔→縮圖預覽確認→辨識（非同步、顯示進度、完成自動跳轉）→ ② 原圖對照＋線上編輯→下載同名 .txt。
+線上以 Cloudflare Tunnel ＋ systemd user services 部署
+（後端 `:8010`、前端 `vite preview :4173`）；更新後需重啟對應服務、前端須先 `npm run build`。
