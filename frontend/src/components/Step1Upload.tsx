@@ -77,7 +77,7 @@ export function Step1Upload({ state, dispatch }: { state: AppState; dispatch: Di
           <p className="info">
             {meta.is_born_digital
               ? `🔎 內含文字層（born-digital）→ 直接擷取文字層（${meta.n_pages} 頁）。`
-              : `🔎 掃描影像／截圖 → PaddleOCR ＋ DeepSeek（${meta.n_pages} 頁）。`}
+              : `🔎 掃描影像／截圖 → PaddleOCR（自動轉正）＋ 幾何重建表格（${meta.n_pages} 頁）。`}
           </p>
 
           <div className="selbar">

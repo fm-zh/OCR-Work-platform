@@ -2,7 +2,7 @@ import type { JobMeta, JobStatus, Sheet } from './types'
 
 const BASE = '/api'
 
-export const MAX_UPLOAD_MB = 20
+export const MAX_UPLOAD_MB = 50
 
 export async function createJob(file: File): Promise<JobMeta> {
   if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {

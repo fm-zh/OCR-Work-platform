@@ -138,7 +138,7 @@ export function Step2Edit({ state, dispatch }: { state: AppState; dispatch: Disp
           {state.view === 'text' ? (
             <textarea readOnly value={status.pages?.[String(page)] ?? ''} />
           ) : !tableReady ? (
-            <p className="progress">表格整理中…（DeepSeek）</p>
+            <p className="progress">表格整理中…</p>
           ) : (
             <div className="tablewrap">
               <table className="grid">

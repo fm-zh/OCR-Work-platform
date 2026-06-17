@@ -26,14 +26,11 @@ app.add_middleware(
 store = JobStore()
 ALLOWED_EXT = {".pdf", ".jpg", ".jpeg", ".png"}
 
-# 上傳防護：避免大檔／多頁把記憶體吃爆（這台機器可用記憶體有限）。
-# Cloudflare 免費方案單一請求硬限約 100MB，故 MAX_UPLOAD_BYTES 設在其下才有意義。
-MAX_UPLOAD_BYTES = 20 * 1024 * 1024
-# 掃描檔走 700 DPI；辨識已改為逐頁串流（記憶體只跟單頁有關、與頁數無關），
-# 故上限不再受記憶體限制，僅用來擋住過量輸入（避免 OCR 時間／暫存過長）。
-# 內含文字層（born-digital）走文字層擷取，幾乎不吃記憶體，可再放寬。
-MAX_PAGES_SCANNED = 30
-MAX_PAGES_BORN_DIGITAL = 60
+# 上傳防護：以「單一總檔大小」為唯一關卡（不再分頁數型別設上限）。
+# Cloudflare 免費方案單一請求硬限約 100MB，故 50MB 留足安全邊距。
+# 辨識（逐頁串流）與預覽（逐頁渲染）記憶體都只與單頁有關、與頁數無關，
+# 故總檔大小即足以同時擋住「過大」與「過多頁」兩種風險。
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 
 def _meta(job: Job) -> schemas.JobMeta:
@@ -67,12 +64,7 @@ async def create_job(file: UploadFile = File(...)) -> schemas.JobMeta:
             status_code=413,
             detail=f"檔案過大：{len(data) / 1048576:.1f}MB，上限 "
                    f"{MAX_UPLOAD_BYTES // 1048576}MB，請壓縮或分批上傳")
-    try:
-        job = store.create(file.filename, data,
-                           max_pages_scanned=MAX_PAGES_SCANNED,
-                           max_pages_born=MAX_PAGES_BORN_DIGITAL)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    job = store.create(file.filename, data)
     return _meta(job)
 
 

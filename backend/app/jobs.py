@@ -30,6 +30,7 @@ class Job:
     structure_status: str = "idle"   # idle | running | done | error
     tables: Optional[dict] = None     # {"1": {"columns":[...], "rows":[[...]]}}
     structure_error: Optional[str] = None
+    geom_tables: Optional[dict] = None  # 掃描檔辨識時就幾何重建好的表格（結構化階段直接採用）
 
 
 class JobStore:
@@ -40,21 +41,14 @@ class JobStore:
         # 並發會疊加導致 OOM，故一次只跑一個。
         self._pool = ThreadPoolExecutor(max_workers=1)
 
-    def create(self, file_name: str, data: bytes,
-               max_pages_scanned: Optional[int] = None,
-               max_pages_born: Optional[int] = None) -> Job:
+    def create(self, file_name: str, data: bytes) -> Job:
         job_id = uuid.uuid4().hex
         work = Path(tempfile.mkdtemp(prefix=f"ocrjob_{job_id}_"))
         fpath = work / file_name
         fpath.write_bytes(data)
         det = engine.detect(fpath)
-        # 在「渲染影像」之前就擋掉頁數過多的檔，避免吃爆記憶體。
-        limit = max_pages_born if det["is_born_digital"] else max_pages_scanned
-        if limit is not None and det["n_pages"] > limit:
-            shutil.rmtree(work, ignore_errors=True)
-            kind = "文字層" if det["is_born_digital"] else "掃描"
-            raise ValueError(
-                f"頁數過多：{det['n_pages']} 頁（{kind}檔上限 {limit} 頁），請分批上傳")
+        # 頁數不再設上限：預覽與辨識都逐頁串流，記憶體只跟單頁有關；
+        # 過大／過多頁的風險已由上傳端的總檔大小上限（MAX_UPLOAD_BYTES）統一把關。
         preview_dir = work / "preview"
         engine.render_previews(fpath, preview_dir)
         job = Job(job_id=job_id, file_name=file_name, file_path=str(fpath),
@@ -110,6 +104,8 @@ class JobStore:
                                     pages=job.selected)
             job.mode = res["mode"]
             job.pages = {str(k): v for k, v in res["pages"].items()}
+            if res.get("tables"):  # 掃描檔：幾何重建表格已在辨識階段完成
+                job.geom_tables = {str(k): v for k, v in res["tables"].items()}
             job.progress = {"message": "完成", "percent": 100}
             job.status = "done"
         except Exception as exc:  # noqa: BLE001
@@ -131,6 +127,11 @@ class JobStore:
     def _run_structuring(self, job_id: str) -> None:
         job = self.get(job_id)
         if job is None:
+            return
+        # 掃描檔在辨識階段已幾何重建好表格，直接採用（免再呼叫 DeepSeek）。
+        if job.geom_tables:
+            job.tables = job.geom_tables
+            job.structure_status = "done"
             return
         try:
             key = engine.resolve_deepseek_key()
