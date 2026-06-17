@@ -34,7 +34,8 @@ def _cluster(vals: list[int], gap: int) -> list[tuple[float, int]]:
 
 def reconstruct(boxes: list[dict]) -> dict:
     """boxes -> {"columns": [], "rows": [[cell,...], ...]}。"""
-    boxes = [b for b in boxes if (b.get("text") or "").strip()]
+    boxes = [b for b in boxes
+             if (b.get("text") or "").strip() and not _is_noise_box(b)]
     if not boxes:
         return {"columns": [], "rows": []}
     W = max(b["x1"] for b in boxes)
@@ -49,10 +50,14 @@ def reconstruct(boxes: list[dict]) -> dict:
            and b.get("score", 1.0) >= 0.7]
     vcols = [c for c, n in _cluster(vcx, int(W * 0.045)) if n >= 2] if vcx else []
 
-    # 2. 標籤欄錨點（非數值框左緣，>=3 次，且距任一數值欄 > 5%W）
+    # 2. 標籤欄錨點（非數值框左緣分群，>=3 次）。
+    #    弱群須距任一數值欄 > 5%W（避免雜訊標籤疊在數值欄上）；但「框數多的強群」
+    #    一律保留——這是雙欄表右半標籤欄的關鍵：右欄標籤(如負債及權益區)緊鄰左欄
+    #    最後一個 % 欄，距離 <5%W 會被誤丟，導致「9 短期借款」這種跨欄合併。
     lx0 = [b["x0"] for b in boxes if not _is_value(b["text"])]
     lcand = [(c, n) for c, n in _cluster(lx0, int(W * 0.05)) if n >= 3] if lx0 else []
-    lcols = [c for c, n in lcand if all(abs(c - v) > W * 0.05 for v in vcols)]
+    lcols = [c for c, n in lcand
+             if n >= 6 or all(abs(c - v) > W * 0.05 for v in vcols)]
 
     cols = sorted([("L", c) for c in lcols] + [("V", c) for c in vcols], key=lambda t: t[1])
     if not cols:  # 全是雜訊 → 退化為每框一列
@@ -96,9 +101,71 @@ def reconstruct(boxes: list[dict]) -> dict:
             cells[c] = " ".join(it["text"] for it in items).strip()
         grid.append(cells)
 
+    grid = _blank_nil_cells(grid)
     grid = _merge_dollar_columns(grid)
     grid = _drop_empty_columns(grid)
     return {"columns": [], "rows": grid}
+
+
+# 各種破折號／長音（表「無／零」佔位符）。負數一律含數字（-3,200、(3,200)），
+# 故「整格不含數字、只由破折號組成」必為無/零佔位，清空必不誤刪負數。
+_DASH_CHARS = "-–—一﹣－ー"
+_DOLLAR_CHARS = "$＄S"  # 貨幣符號（含 OCR 易混的 S）
+
+
+def _is_pure_dash(tok: str) -> bool:
+    return tok != "" and all(ch in _DASH_CHARS for ch in tok)
+
+
+def _is_pure_dollar(tok: str) -> bool:
+    return tok != "" and all(ch in _DOLLAR_CHARS for ch in tok)
+
+
+def _has_cjk(s: str) -> bool:
+    return any("一" <= c <= "鿿" for c in s)
+
+
+def _is_noise_box(b: dict) -> bool:
+    """低信心的「孤立單字元、且非中文」框視為 OCR 雜訊（如 J、)、雜訊 1）。
+    保護中文（附註代碼/標籤）與高信心值；多字元數字完全不受影響。"""
+    t = (b.get("text") or "").strip()
+    return len(t) == 1 and b.get("score", 1.0) < 0.65 and not _has_cjk(t)
+
+
+def _is_nil_cell(cell: str) -> bool:
+    c = cell.strip()
+    if not c or any(ch.isdigit() for ch in c):
+        return False
+    core = c.replace("$", "").replace(" ", "").replace("　", "")
+    return _is_pure_dash(core)
+
+
+def _clean_cell(cell: str) -> str:
+    """清理單格雜訊（不動任何數字）：
+    - 「無/零」破折號 token（純破折號，如 一／–）→ 丟棄。
+    - 「落單 $」→ 丟棄（後面緊接數字的貨幣 $ 才保留，如「$ 135,000,000」）。
+    - 負號緊貼數字（-3,200）或括號負數（(3,200)）為單一 token，必含數字，不受影響。
+    """
+    c = cell.strip()
+    if not c:
+        return ""
+    toks = c.split()
+    out: list[str] = []
+    for i, t in enumerate(toks):
+        if _is_pure_dash(t):
+            continue  # 無/零破折號
+        if _is_pure_dollar(t):
+            nxt = toks[i + 1] if i + 1 < len(toks) else ""
+            if nxt and nxt[0].isdigit():
+                out.append(t)  # 貨幣符號（後接數字）→ 保留
+            continue           # 落單 $ → 丟棄
+        out.append(t)
+    return " ".join(out)
+
+
+def _blank_nil_cells(grid: list[list[str]]) -> list[list[str]]:
+    """逐格清理「無/零」破折號與落單 $（見 _clean_cell）。"""
+    return [[_clean_cell(c) for c in row] for row in grid]
 
 
 def _merge_dollar_columns(grid: list[list[str]]) -> list[list[str]]:
