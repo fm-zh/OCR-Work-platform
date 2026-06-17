@@ -15,6 +15,36 @@
 掃描檔的「幾何重建」利用每塊文字的 bbox 座標還原欄位，能正確處理**雙欄**（左資產／右負債）
 以及被 90° 擺放的**橫式寬表**——欄位與數字為確定性流程，DeepSeek 僅用於補回被掃描裁切的中文科目名稱。
 
+## 使用的模型
+
+掃描檔辨識（`backend/paddle_worker.py`）以 PaddleOCR pipeline 執行。**雙模型擇優**：每頁同時用
+PP-OCRv6_medium（預設）與 PP-OCRv5_server 各跑一次，再依文字框「信心分數」逐格擇優合併——
+因為沒有單一模型對所有頁都最好（medium 對「有底線的總計列」較穩、server 對清晰小字較準）。
+
+| 階段 | 模型 / 設定 | 說明 |
+|---|---|---|
+| 文字偵測＋辨識（模型 A）| `PP-OCRv6_medium`（預設 det＋rec）| 對總計列等情境較穩 |
+| 文字偵測＋辨識（模型 B）| `PP-OCRv5_server_det` ＋ `PP-OCRv5_server_rec` | 對清晰小字（金額、科目名）辨識力較強 |
+| 合併 | 逐格依信心擇優 | 兩模型逐一載入跑完釋放（控 GPU 記憶體），約 1.5× 時間 |
+| 文件方向 | `PP-LCNet_x1_0_doc_ori` | `use_doc_orientation_classify=True`，側躺寬表自動轉正 |
+| 文字行方向 | `PP-LCNet_x1_0_textline_ori` | `use_textline_orientation=True` |
+| 偵測解析度 | `text_det_limit_side_len=2000` | 避免密集表被降採樣 |
+| 語言 | `chinese_cht`（繁體中文）| |
+| 其他 | `enable_mkldnn=False` | 否則 paddlepaddle 3.3 在 CPU 會 PIR oneDNN 崩潰 |
+
+> 表格欄位由文字框 bbox 幾何重建：欄位錨點只採「含數字、信心≥0.7」的框（破折號與低信心雜訊不參與定欄，避免相鄰欄被誤併）。
+
+LLM／後處理：
+
+| 用途 | 模型 / 工具 |
+|---|---|
+| 簡轉繁 | OpenCC `s2tw`（規則轉換，非模型；不用 `s2twp` 以免誤改財報用詞）|
+| 掃描檔科目名稱還原 | DeepSeek `deepseek-chat`（只修中文標籤，數字／欄位不動）|
+| born-digital 表格結構化 | DeepSeek `deepseek-chat` |
+
+> 註：模型權重首次執行時自動下載並快取於 `~/.paddlex/official_models`。
+> 遠端 OCR API（`paddleocr-remote`）已不用於 web 掃描流程，僅 `ocr_recognize.py` 的 CLI 路徑保留。
+
 ## 架構
 
 - **後端**（`backend/`，FastAPI）：任務管理、頁面渲染、辨識路由、Excel 匯出。

@@ -39,8 +39,14 @@ def reconstruct(boxes: list[dict]) -> dict:
         return {"columns": [], "rows": []}
     W = max(b["x1"] for b in boxes)
 
-    # 1. 數值欄錨點（出現 >=2 次的群）
-    vcx = [b["cx"] for b in boxes if _is_value(b["text"])]
+    # 1. 數值欄錨點（出現 >=2 次的群）。只用「含阿拉伯數字、且信心 >=0.7」的框定錨點：
+    #    - 排除破折號（一／–／-）：散布各 x，會把相鄰數字欄誤併。
+    #    - 排除低信心雜訊框（如夾在兩欄間的誤判「1」）：會橋接相鄰欄、漏掉中間欄
+    #      （例：普通股股本 與 資本公積 之間一個 0.6 分的「1」把兩欄併成一欄）。
+    #    低信心框仍會在下方被「指派」到最近欄、不會遺失，只是不參與定欄。
+    vcx = [b["cx"] for b in boxes
+           if _is_value(b["text"]) and any(ch.isdigit() for ch in b["text"])
+           and b.get("score", 1.0) >= 0.7]
     vcols = [c for c, n in _cluster(vcx, int(W * 0.045)) if n >= 2] if vcx else []
 
     # 2. 標籤欄錨點（非數值框左緣，>=3 次，且距任一數值欄 > 5%W）
