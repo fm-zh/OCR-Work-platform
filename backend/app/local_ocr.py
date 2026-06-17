@@ -13,6 +13,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+import numpy as np
+from PIL import Image
+
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
@@ -25,6 +28,25 @@ PADDLE_PYTHON = os.environ.get(
     "PADDLE_OCR_PYTHON", "/home/zhaoi/miniconda3/envs/paddleocr/bin/python")
 WORKER = str(Path(__file__).resolve().parents[1] / "paddle_worker.py")
 OCR_DPI = 300  # PaddleOCR 用：300 DPI 足夠（含方向偵測），比 700 快很多
+
+# 前處理：移除紅色公司印章（紅→白）。實測為「淨負面」——在偏淡/帶色的掃描頁，
+# 連資料列的中文標籤筆畫都會被當成紅色去掉（現金及約當現金→全市務房），
+# 破壞關鍵內容；對被印章覆蓋的標題雖略有幫助，但不值得犧牲資料列。故預設關閉。
+REMOVE_RED_STAMPS = False
+
+# 後處理：OpenCC 簡轉繁（台灣正體）。PaddleOCR 繁中模型偶爾吐簡體字
+#（如 税/减/额），轉換後台灣正體；已是正體者不動。
+try:
+    import opencc  # type: ignore
+    # s2tw（非 s2twp）：只做字元簡轉繁，不替換詞彙。s2twp 會把財報正確用詞
+    # 誤改成 IT 慣用詞（設備→裝置、項目→專案），故不可用。
+    _CC = opencc.OpenCC("s2tw")
+except Exception:  # noqa: BLE001
+    _CC = None
+
+
+def _to_tw(text: str) -> str:
+    return _CC.convert(text) if (_CC and text) else text
 
 
 def _run_worker(image_paths: list[str], timeout: int) -> dict:
@@ -55,11 +77,17 @@ def recognize_scanned(pdf_path, progress=None, pages=None) -> dict:
     workdir = Path(tempfile.mkdtemp(prefix="paddleocr_"))
     try:
         # 1. 逐頁渲染成 PNG（套用 /Rotate；側躺寬表由 worker 的方向偵測再轉正）
+        #    並去除紅色印章，避免印章覆蓋處的文字被讀成亂碼。
         log(f"渲染影像（{OCR_DPI} DPI）…")
         path_to_page: dict[str, int] = {}
         for i, im in ocr_lib.iter_hidpi(Path(pdf_path), OCR_DPI, pages=pages):
             pp = workdir / f"page_{i:04d}.png"
-            im.convert("RGB").save(pp, "PNG")
+            if REMOVE_RED_STAMPS:
+                arr = ocr_lib.remove_colored_pixels(
+                    np.asarray(im.convert("RGB")), "red", sat_threshold=50)
+                Image.fromarray(arr).save(pp, "PNG")
+            else:
+                im.convert("RGB").save(pp, "PNG")
             im.close()
             path_to_page[str(pp)] = i
 
@@ -78,6 +106,8 @@ def recognize_scanned(pdf_path, progress=None, pages=None) -> dict:
         for p in order:
             n = path_to_page[p]
             boxes = results.get(p, [])
+            for b in boxes:  # 簡轉繁（台灣正體）
+                b["text"] = _to_tw(b.get("text", ""))
             grid = table_reconstruct.reconstruct(boxes)
             tables[n] = grid
             pages_text[n] = table_reconstruct.grid_to_text(grid)

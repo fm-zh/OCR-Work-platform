@@ -86,6 +86,74 @@ def structure_page(text: str, api_key: str, model: str = "deepseek-chat",
     return _parse_structured(raw, text)
 
 
+_LABEL_FIX_PROMPT = """以下是一頁台灣財務報表中「中文科目名稱」儲存格的清單（依表格由上而下排序），\
+以 JSON 物件給出，key 為編號、value 為 OCR 文字。這些名稱可能被掃描裁切（左半遺失）\
+或有形近/簡體誤字，例如：「當現金」應為「現金及約當現金」、「爭額」應為「應收帳款淨額」、\
+「安公允價值衡量之金融資產流動」應為「透過損益按公允價值衡量之金融資產-流動」。
+
+請逐一還原成完整、正確的台灣財報慣用科目名稱。規則：
+- 只輸出單一 JSON 物件，key 與輸入「完全相同」，value 為修正後文字。
+- 名稱後若帶附註參照（如「(附註五(一))」），保留該參照、只還原名稱本體。
+- 只修明顯截斷或錯字；無把握就原樣回傳該 value。
+- 不要新增 key、不要任何說明文字。
+
+科目清單：
+{cells}"""
+
+# 「受保護」儲存格（保留原值、不交給 LLM 修改）：含阿拉伯數字（金額/年度/百分比），
+# 或純中文數字附註代碼（如 四(十二)）。帶中文科目名的格（即使含括號附註）可被修正。
+_HAS_DIGIT = re.compile(r"\d")
+_NOTE_ONLY = re.compile(r"^[\s一二三四五六七八九十百千〇零()（）.、,$%:：－\-]+$")
+
+
+def _is_protected(cell: str) -> bool:
+    c = cell.strip()
+    if not c:
+        return True
+    if _HAS_DIGIT.search(c):
+        return True
+    return bool(_NOTE_ONLY.match(c))
+
+
+def restore_labels(grid: dict, api_key: str, model: str = "deepseek-chat",
+                   timeout: int = 120) -> dict:
+    """用 DeepSeek 修正表格中「截斷/錯字的中文科目名稱」，但不動數字與欄位結構。
+
+    幾何重建已保證欄位正確；此步只補回被掃描裁切或誤判的中文標籤。任何會改變
+    表格形狀、或更動到「含數字/符號/空白」儲存格的回應一律捨棄、退回原表，
+    確保永不破壞已正確的數據。
+    """
+    rows = grid.get("rows") or []
+    if not rows or not api_key or not api_key.strip():
+        return grid
+    # 只挑「中文科目名稱」格送修；含數字/符號/空白格完全不送、永不更動。
+    cells = []  # (row_idx, col_idx, text)
+    for ri, row in enumerate(rows):
+        for ci, c in enumerate(row):
+            c = "" if c is None else str(c)
+            if c.strip() and not _is_protected(c):
+                cells.append((ri, ci, c))
+    if not cells:
+        return grid
+    payload = {str(i): t for i, (_, _, t) in enumerate(cells)}
+    prompt = _LABEL_FIX_PROMPT.format(
+        cells=json.dumps(payload, ensure_ascii=False))
+    try:
+        raw = _deepseek_json(prompt, api_key, model, timeout)
+        fixes = json.loads(raw)
+    except (RuntimeError, json.JSONDecodeError, TypeError, KeyError):
+        return grid
+    if not isinstance(fixes, dict):
+        return grid
+    # 回填到原表「固定位置」：結構/數字由原表決定，永不被破壞。
+    out = [list(r) for r in rows]
+    for i, (ri, ci, _orig) in enumerate(cells):
+        nv = fixes.get(str(i))
+        if isinstance(nv, str) and nv.strip():
+            out[ri][ci] = nv
+    return {"columns": grid.get("columns") or [], "rows": out}
+
+
 _ILLEGAL_SHEET = re.compile(r"[\[\]:*?/\\]")
 
 

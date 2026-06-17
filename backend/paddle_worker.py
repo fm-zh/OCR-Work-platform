@@ -22,6 +22,13 @@ def main(paths):
         use_doc_unwarping=False,
         use_textline_orientation=True,
         enable_mkldnn=False,
+        # PP-OCRv5 server 模型：辨識力明顯優於預設的 PP-OCRv6_medium，能正確讀出
+        # 「清晰但被 medium 誤讀」的小字數字/科目名（如 301,938,133、法定盈餘公積）；
+        # GPU 上仍約 1–2 秒/頁。det side_len 提高避免密集表被降採樣。
+        text_detection_model_name="PP-OCRv5_server_det",
+        text_recognition_model_name="PP-OCRv5_server_rec",
+        text_det_limit_type="max",
+        text_det_limit_side_len=2000,
         lang="chinese_cht",
     )
     results = {}

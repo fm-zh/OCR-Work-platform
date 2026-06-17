@@ -128,9 +128,24 @@ class JobStore:
         job = self.get(job_id)
         if job is None:
             return
-        # 掃描檔在辨識階段已幾何重建好表格，直接採用（免再呼叫 DeepSeek）。
+        # 掃描檔在辨識階段已幾何重建好表格（欄位/數字正確）。此處用 DeepSeek
+        # 「只修中文科目名稱」的截斷/錯字（被掃描裁切或形近誤判），數字與欄位不動；
+        # 任何異常都退回幾何表，確保不破壞已正確的數據。
         if job.geom_tables:
-            job.tables = job.geom_tables
+            try:
+                key = engine.resolve_deepseek_key()
+                items = list(job.geom_tables.items())
+                fixed: dict = {}
+                if key and items:
+                    with ThreadPoolExecutor(max_workers=min(4, len(items))) as ex:
+                        for k, g in ex.map(
+                            lambda kv: (kv[0], excel.restore_labels(kv[1], key)), items):
+                            fixed[k] = g
+                    job.tables = fixed
+                else:
+                    job.tables = job.geom_tables
+            except Exception:  # noqa: BLE001
+                job.tables = job.geom_tables  # LLM 後處理失敗 → 用幾何表
             job.structure_status = "done"
             return
         try:
